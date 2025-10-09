@@ -1,0 +1,113 @@
+2025-10-09 00:01:27,221 - openevolve.controller - INFO - Logging to ../examples/function_minimization/openevolve_output/logs/openevolve_20251009_000127.log
+2025-10-09 00:01:27,225 - openevolve.controller - INFO - Set random seed to 42 for reproducibility
+2025-10-09 00:01:27,250 - openevolve.llm.openai - INFO - Initialized OpenAI LLM with model: codellama:7b
+2025-10-09 00:01:27,250 - openevolve.llm.ensemble - INFO - Initialized LLM ensemble with models: codellama:7b (weight: 1.00)
+2025-10-09 00:01:27,258 - openevolve.prompt.sampler - INFO - Initialized prompt sampler
+2025-10-09 00:01:27,259 - openevolve.prompt.sampler - INFO - Set custom templates: system=evaluator_system_message, user=None
+2025-10-09 00:01:27,259 - openevolve.database - INFO - Initialized program database with 0 programs
+2025-10-09 00:01:27,261 - openevolve.evaluator - INFO - Successfully loaded evaluation function from examples/function_minimization/evaluator.py
+2025-10-09 00:01:27,262 - openevolve.evaluator - INFO - Initialized evaluator with examples/function_minimization/evaluator.py
+2025-10-09 00:01:27,262 - openevolve.controller - INFO - Initialized OpenEvolve with ../examples/function_minimization/initial_program.py
+2025-10-09 00:01:27,262 - openevolve.controller - INFO - Adding initial program to database
+2025-10-09 00:01:27,273 - openevolve.evaluator - INFO - Evaluated program caf804c5-33cd-4ca9-b90a-c47ec3b681c2 in 0.01s: runs_successfully=1.0000, value_score=0.9418, distance_score=0.7566, combined_score=1.2148
+2025-10-09 00:01:27,274 - openevolve.database - INFO - New MAP-Elites cell occupied in island 0: {'complexity': 5, 'diversity': 0}
+2025-10-09 00:01:27,274 - openevolve.process_parallel - INFO - Initialized process parallel controller with 3 workers
+2025-10-09 00:01:27,275 - openevolve.process_parallel - INFO - Started process pool with 3 processes
+2025-10-09 00:01:27,275 - openevolve.controller - INFO - Using island-based evolution with 3 islands
+2025-10-09 00:01:27,275 - openevolve.database - INFO - Island Status:
+2025-10-09 00:01:27,275 - openevolve.database - INFO -  * Island 0: 1 programs, best=1.2148, avg=1.2148, diversity=0.00, gen=0 (best: caf804c5-33cd-4ca9-b90a-c47ec3b681c2)
+2025-10-09 00:01:27,275 - openevolve.database - INFO -    Island 1: 0 programs, best=0.0000, avg=0.0000, diversity=0.00, gen=0
+2025-10-09 00:01:27,275 - openevolve.database - INFO -    Island 2: 0 programs, best=0.0000, avg=0.0000, diversity=0.00, gen=0
+2025-10-09 00:01:27,275 - openevolve.process_parallel - INFO - Starting process-based evolution from iteration 1 for 50 iterations (total: 51)
+2025-10-09 00:01:27,281 - openevolve.process_parallel - INFO - Early stopping disabled
+2025-10-09 00:01:27,303 - openevolve.prompt.sampler - INFO - Set custom templates: system=evaluator_system_message, user=None
+2025-10-09 00:01:27,303 - openevolve.evaluator - INFO - Successfully loaded evaluation function from examples/function_minimization/evaluator.py
+2025-10-09 00:01:27,304 - openevolve.evaluator - INFO - Initialized evaluator with examples/function_minimization/evaluator.py
+2025-10-09 00:01:27,305 - openevolve.llm.ensemble - INFO - Sampled model: codellama:7b
+2025-10-09 00:01:27,305 - openevolve.prompt.sampler - INFO - Set custom templates: system=evaluator_system_message, user=None
+2025-10-09 00:01:27,305 - openevolve.prompt.sampler - INFO - Set custom templates: system=evaluator_system_message, user=None
+2025-10-09 00:01:27,305 - openevolve.evaluator - INFO - Successfully loaded evaluation function from examples/function_minimization/evaluator.py
+2025-10-09 00:01:27,306 - openevolve.evaluator - INFO - Successfully loaded evaluation function from examples/function_minimization/evaluator.py
+2025-10-09 00:01:27,306 - openevolve.evaluator - INFO - Initialized evaluator with examples/function_minimization/evaluator.py
+2025-10-09 00:01:27,306 - openevolve.evaluator - INFO - Initialized evaluator with examples/function_minimization/evaluator.py
+2025-10-09 00:01:27,307 - openevolve.llm.ensemble - INFO - Sampled model: codellama:7b
+2025-10-09 00:01:27,307 - openevolve.llm.ensemble - INFO - Sampled model: codellama:7b
+2025-10-09 00:03:27,322 - openevolve.llm.openai - WARNING - Timeout on attempt 1/4. Retrying...
+2025-10-09 00:03:27,350 - openevolve.llm.openai - WARNING - Timeout on attempt 1/4. Retrying...
+2025-10-09 00:03:27,402 - openevolve.llm.openai - WARNING - Timeout on attempt 1/4. Retrying...
+2025-10-09 00:03:27,575 - openai._base_client - INFO - Retrying request to /chat/completions in 0.383331 seconds
+2025-10-09 00:03:27,602 - openai._base_client - INFO - Retrying request to /chat/completions in 0.389872 seconds
+2025-10-09 00:03:27,603 - openai._base_client - INFO - Retrying request to /chat/completions in 0.408620 seconds
+2025-10-09 00:05:28,058 - openai._base_client - INFO - Retrying request to /chat/completions in 0.894637 seconds
+2025-10-09 00:05:28,094 - openai._base_client - INFO - Retrying request to /chat/completions in 0.968597 seconds
+2025-10-09 00:05:28,110 - openai._base_client - INFO - Retrying request to /chat/completions in 0.817192 seconds
+2025-10-09 00:05:32,334 - openai._base_client - INFO - Retrying request to /chat/completions in 0.499115 seconds
+2025-10-09 00:05:32,426 - openevolve.llm.openai - WARNING - Timeout on attempt 2/4. Retrying...
+2025-10-09 00:05:32,454 - openevolve.llm.openai - WARNING - Timeout on attempt 2/4. Retrying...
+2025-10-09 00:05:32,455 - openevolve.llm.openai - WARNING - Timeout on attempt 2/4. Retrying...
+2025-10-09 00:05:32,459 - openai._base_client - INFO - Retrying request to /chat/completions in 0.427133 seconds
+2025-10-09 00:05:32,510 - openai._base_client - INFO - Retrying request to /chat/completions in 0.378980 seconds
+2025-10-09 00:07:29,031 - openai._base_client - INFO - Retrying request to /chat/completions in 1.828921 seconds
+2025-10-09 00:07:29,054 - openai._base_client - INFO - Retrying request to /chat/completions in 1.716807 seconds
+2025-10-09 00:07:29,162 - openai._base_client - INFO - Retrying request to /chat/completions in 1.728089 seconds
+2025-10-09 00:07:32,936 - openai._base_client - INFO - Retrying request to /chat/completions in 0.949035 seconds
+2025-10-09 00:07:32,936 - openai._base_client - INFO - Retrying request to /chat/completions in 0.905899 seconds
+2025-10-09 00:07:32,990 - openai._base_client - INFO - Retrying request to /chat/completions in 0.778794 seconds
+2025-10-09 00:07:37,438 - openai._base_client - INFO - Retrying request to /chat/completions in 0.456222 seconds
+2025-10-09 00:07:37,474 - openai._base_client - INFO - Retrying request to /chat/completions in 0.437374 seconds
+2025-10-09 00:07:37,530 - openevolve.llm.openai - WARNING - Timeout on attempt 3/4. Retrying...
+2025-10-09 00:07:37,558 - openevolve.llm.openai - WARNING - Timeout on attempt 3/4. Retrying...
+2025-10-09 00:07:37,558 - openevolve.llm.openai - WARNING - Timeout on attempt 3/4. Retrying...
+2025-10-09 00:07:37,562 - openai._base_client - INFO - Retrying request to /chat/completions in 0.404031 seconds
+2025-10-09 00:09:33,870 - openai._base_client - INFO - Retrying request to /chat/completions in 1.572011 seconds
+2025-10-09 00:09:33,942 - openai._base_client - INFO - Retrying request to /chat/completions in 1.897568 seconds
+2025-10-09 00:09:33,986 - openai._base_client - INFO - Retrying request to /chat/completions in 1.830059 seconds
+2025-10-09 00:09:37,994 - openai._base_client - INFO - Retrying request to /chat/completions in 0.801764 seconds
+2025-10-09 00:09:38,010 - openai._base_client - INFO - Retrying request to /chat/completions in 0.775622 seconds
+2025-10-09 00:09:38,034 - openai._base_client - INFO - Retrying request to /chat/completions in 0.927280 seconds
+2025-10-09 00:09:42,548 - openevolve.llm.openai - ERROR - All 4 attempts failed with timeout
+2025-10-09 00:09:42,570 - openevolve.llm.openai - ERROR - All 4 attempts failed with timeout
+2025-10-09 00:09:42,574 - openevolve.llm.openai - ERROR - All 4 attempts failed with timeout
+2025-10-09 00:09:42,640 - openai._base_client - INFO - Retrying request to /chat/completions in 0.498887 seconds
+2025-10-09 00:09:42,662 - openai._base_client - INFO - Retrying request to /chat/completions in 0.454793 seconds
+2025-10-09 00:09:42,666 - openai._base_client - INFO - Retrying request to /chat/completions in 0.381604 seconds
+2025-10-09 00:10:40,836 - openevolve.controller - INFO - Received signal 2, initiating graceful shutdown...
+2025-10-09 00:10:40,836 - openevolve.controller - INFO - Received signal 2, initiating graceful shutdown...
+2025-10-09 00:10:40,836 - openevolve.controller - INFO - Received signal 2, initiating graceful shutdown...
+2025-10-09 00:10:40,836 - openevolve.controller - INFO - Received signal 2, initiating graceful shutdown...
+2025-10-09 00:10:40,837 - openevolve.process_parallel - INFO - Graceful shutdown requested...
+2025-10-09 00:10:40,837 - openevolve.process_parallel - INFO - Graceful shutdown requested...
+2025-10-09 00:10:40,837 - openevolve.process_parallel - INFO - Graceful shutdown requested...
+2025-10-09 00:10:40,837 - openevolve.process_parallel - INFO - Graceful shutdown requested...
+2025-10-09 00:10:40,837 - openevolve.process_parallel - INFO - Shutdown requested, canceling remaining evaluations...
+2025-10-09 00:10:40,837 - openevolve.process_parallel - INFO - ✅ Evolution completed - Shutdown requested
+2025-10-09 00:10:40,837 - openevolve.controller - INFO - Evolution stopped due to shutdown request
+2025-10-09 00:11:38,886 - openai._base_client - INFO - Retrying request to /chat/completions in 1.646479 seconds
+2025-10-09 00:11:38,898 - openai._base_client - INFO - Retrying request to /chat/completions in 1.933094 seconds
+2025-10-09 00:11:39,064 - openai._base_client - INFO - Retrying request to /chat/completions in 1.685334 seconds
+2025-10-09 00:11:43,150 - openai._base_client - INFO - Retrying request to /chat/completions in 0.944543 seconds
+2025-10-09 00:11:43,218 - openai._base_client - INFO - Retrying request to /chat/completions in 0.836222 seconds
+2025-10-09 00:11:43,238 - openai._base_client - INFO - Retrying request to /chat/completions in 0.964756 seconds
+2025-10-09 00:12:31,199 - openevolve.controller - INFO - Force exit requested - terminating immediately
+2025-10-09 00:12:31,199 - openevolve.controller - INFO - Force exit requested - terminating immediately
+2025-10-09 00:12:31,199 - openevolve.controller - INFO - Force exit requested - terminating immediately
+2025-10-09 00:12:31,199 - openevolve.controller - INFO - Force exit requested - terminating immediately
+2025-10-09 00:12:31,205 - openevolve.llm.ensemble - INFO - Sampled model: codellama:7b
+2025-10-09 00:12:31,205 - openevolve.llm.ensemble - INFO - Sampled model: codellama:7b
+2025-10-09 00:12:31,205 - openevolve.llm.ensemble - INFO - Sampled model: codellama:7b
+2025-10-09 00:12:34,339 - openevolve.controller - INFO - Force exit requested - terminating immediately
+2025-10-09 00:12:34,339 - openevolve.controller - INFO - Force exit requested - terminating immediately
+2025-10-09 00:12:34,339 - openevolve.controller - INFO - Force exit requested - terminating immediately
+2025-10-09 00:12:34,339 - openevolve.controller - INFO - Force exit requested - terminating immediately
+2025-10-09 00:13:44,154 - openai._base_client - INFO - Retrying request to /chat/completions in 1.513342 seconds
+2025-10-09 00:13:44,194 - openai._base_client - INFO - Retrying request to /chat/completions in 1.585607 seconds
+2025-10-09 00:13:44,302 - openai._base_client - INFO - Retrying request to /chat/completions in 1.913393 seconds
+2025-10-09 00:14:31,306 - openai._base_client - INFO - Retrying request to /chat/completions in 0.451198 seconds
+2025-10-09 00:14:31,306 - openai._base_client - INFO - Retrying request to /chat/completions in 0.498088 seconds
+2025-10-09 00:14:31,306 - openai._base_client - INFO - Retrying request to /chat/completions in 0.477814 seconds
+2025-10-09 00:16:31,858 - openai._base_client - INFO - Retrying request to /chat/completions in 0.981283 seconds
+2025-10-09 00:16:31,882 - openai._base_client - INFO - Retrying request to /chat/completions in 0.891350 seconds
+2025-10-09 00:16:31,906 - openai._base_client - INFO - Retrying request to /chat/completions in 0.981800 seconds
+2025-10-09 00:18:32,874 - openai._base_client - INFO - Retrying request to /chat/completions in 1.909749 seconds
+2025-10-09 00:18:32,938 - openai._base_client - INFO - Retrying request to /chat/completions in 1.787204 seconds
+2025-10-09 00:18:32,990 - openai._base_client - INFO - Retrying request to /chat/completions in 1.847328 seconds

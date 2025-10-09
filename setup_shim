@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# === Config ===
+MINIFORGE_DIR="$HOME/miniforge3"
+MINIFORGE_INSTALLER="$HOME/miniforge.sh"
+ENV_NAME="oe311"
+PROJECT_DIR="$HOME/alphaEvolveProject"
+PY_VER="3.11"
+
+log() { printf "\n\033[1;32m[setup]\033[0m %s\n" "$*"; }
+
+need_cmd() {
+  command -v "$1" >/dev/null 2>&1 || { echo "Missing required command: $1"; exit 1; }
+}
+
+download_miniforge() {
+  local arch
+  arch=$(uname -m)
+  case "$arch" in
+    x86_64)   MF="Miniforge3-Linux-x86_64.sh" ;;
+    aarch64|arm64) MF="Miniforge3-Linux-aarch64.sh" ;;
+    ppc64le)  MF="Miniforge3-Linux-ppc64le.sh" ;;
+    s390x)    MF="Miniforge3-Linux-s390x.sh" ;;
+    *) echo "Unsupported arch: $arch"; exit 1 ;;
+  esac
+  local url="https://github.com/conda-forge/miniforge/releases/latest/download/$MF"
+  log "Downloading Miniforge for $arch ..."
+  if command -v wget >/dev/null 2>&1; then
+    wget -q "$url" -O "$MINIFORGE_INSTALLER"
+  elif command -v curl >/dev/null 2>&1; then
+    curl -sSL "$url" -o "$MINIFORGE_INSTALLER"
+  else
+    echo "Need either wget or curl to download Miniforge."
+    exit 1
+  fi
+}
+
+install_or_update_miniforge() {
+  # If conda exists, try update mode; else clean install
+  if [[ -x "$MINIFORGE_DIR/bin/conda" ]]; then
+    log "Miniforge detected; updating in place ..."
+    bash "$MINIFORGE_INSTALLER" -b -u -p "$MINIFORGE_DIR"
+  else
+    # If a previous broken install exists, remove it first
+    if [[ -d "$MINIFORGE_DIR" ]]; then
+      log "Removing previous incomplete Miniforge at $MINIFORGE_DIR ..."
+      rm -rf "$MINIFORGE_DIR"
+    fi
+    log "Installing Miniforge to $MINIFORGE_DIR ..."
+    bash "$MINIFORGE_INSTALLER" -b -p "$MINIFORGE_DIR"
+  fi
+}
+
+activate_conda() {
+  # Activate conda in this non-interactive shell
+  # shellcheck disable=SC1090
+  eval "$("$MINIFORGE_DIR/bin/conda" shell.bash hook)"
+  conda config --set always_yes yes --set changeps1 no >/dev/null
+  conda --version
+}
+
+ensure_env() {
+  if conda env list | awk '{print $1}' | grep -qx "$ENV_NAME"; then
+    log "Conda env '$ENV_NAME' already exists."
+  else
+    log "Creating conda env '$ENV_NAME' with Python $PY_VER ..."
+    conda create -n "$ENV_NAME" "python=$PY_VER"
+  fi
+  # shellcheck disable=SC2046
+  conda activate "$ENV_NAME"
+}
+
+install_openevolve() {
+  log "Upgrading pip and installing openevolve ..."
+  python -m pip install --upgrade pip
+  pip install --no-cache-dir openevolve
+}
+
+make_project_dir() {
+  log "Ensuring project directory exists at $PROJECT_DIR ..."
+  mkdir -p "$PROJECT_DIR"
+}
+
+main() {
+  need_cmd uname
+  # 1) Get the correct Miniforge installer
+  download_miniforge
+  # 2) Install or update Miniforge
+  install_or_update_miniforge
+  # 3) Enable conda in this shell
+  activate_conda
+  # 4) Create/activate Python 3.11 env
+  ensure_env
+  # 5) Install openevolve in the env
+  install_openevolve
+  # 6) Create project dir
+  make_project_dir
+
+  log "All done!"
+  echo
+  echo "Next time, activate your env with:"
+  echo "  source \"$MINIFORGE_DIR/bin/activate\" \"$ENV_NAME\""
+  echo
+  echo "Project dir:"
+  echo "  $PROJECT_DIR"
+}
+
+main "$@"
