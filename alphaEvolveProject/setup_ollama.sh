@@ -75,3 +75,7 @@ main() {
   echo "API: curl http://${HOST}:${PORT}/api/chat -d '{\"model\":\"${MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}'"
 }
 main "$@"
+
+# --- Set dummy OpenAI API key for Ollama's OpenAI-compatible endpoint ---
+export OPENAI_API_KEY="ollama"
+echo "[ollama] Exported OPENAI_API_KEY=ollama (for local use)"

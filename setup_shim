@@ -37,12 +37,10 @@ download_miniforge() {
 }
 
 install_or_update_miniforge() {
-  # If conda exists, try update mode; else clean install
   if [[ -x "$MINIFORGE_DIR/bin/conda" ]]; then
     log "Miniforge detected; updating in place ..."
     bash "$MINIFORGE_INSTALLER" -b -u -p "$MINIFORGE_DIR"
   else
-    # If a previous broken install exists, remove it first
     if [[ -d "$MINIFORGE_DIR" ]]; then
       log "Removing previous incomplete Miniforge at $MINIFORGE_DIR ..."
       rm -rf "$MINIFORGE_DIR"
@@ -53,8 +51,6 @@ install_or_update_miniforge() {
 }
 
 activate_conda() {
-  # Activate conda in this non-interactive shell
-  # shellcheck disable=SC1090
   eval "$("$MINIFORGE_DIR/bin/conda" shell.bash hook)"
   conda config --set always_yes yes --set changeps1 no >/dev/null
   conda --version
@@ -67,7 +63,6 @@ ensure_env() {
     log "Creating conda env '$ENV_NAME' with Python $PY_VER ..."
     conda create -n "$ENV_NAME" "python=$PY_VER"
   fi
-  # shellcheck disable=SC2046
   conda activate "$ENV_NAME"
 }
 
@@ -77,6 +72,30 @@ install_openevolve() {
   pip install --no-cache-dir openevolve
 }
 
+update_submodules() {
+  log "Initializing and updating git submodules recursively ..."
+  git submodule update --init --recursive
+}
+
+build_champsim_deps() {
+  local champsim_dir="$PROJECT_DIR/ChampSim"
+  if [[ -d "$champsim_dir" ]]; then
+    log "Found ChampSim at $champsim_dir — bootstrapping vcpkg and installing deps ..."
+    cd "$champsim_dir"
+    if [[ -x "vcpkg/bootstrap-vcpkg.sh" ]]; then
+      ./vcpkg/bootstrap-vcpkg.sh
+    else
+      log "bootstrap-vcpkg.sh not found — cloning vcpkg ..."
+      git clone https://github.com/microsoft/vcpkg.git
+      ./vcpkg/bootstrap-vcpkg.sh
+    fi
+    ./vcpkg/vcpkg install
+    cd "$PROJECT_DIR"
+  else
+    log "No ChampSim directory found — skipping dependency build."
+  fi
+}
+
 make_project_dir() {
   log "Ensuring project directory exists at $PROJECT_DIR ..."
   mkdir -p "$PROJECT_DIR"
@@ -84,26 +103,31 @@ make_project_dir() {
 
 main() {
   need_cmd uname
-  # 1) Get the correct Miniforge installer
+  need_cmd git
   download_miniforge
-  # 2) Install or update Miniforge
   install_or_update_miniforge
-  # 3) Enable conda in this shell
   activate_conda
-  # 4) Create/activate Python 3.11 env
   ensure_env
-  # 5) Install openevolve in the env
   install_openevolve
-  # 6) Create project dir
   make_project_dir
+  update_submodules
+  build_champsim_deps
 
-  log "All done!"
+  log "✅ Setup complete!"
   echo
-  echo "Next time, activate your env with:"
-  echo "  source \"$MINIFORGE_DIR/bin/activate\" \"$ENV_NAME\""
+  echo "Next steps:"
+  echo "1. Activate your environment:"
+  echo "   source \"$MINIFORGE_DIR/bin/activate\" \"$ENV_NAME\""
   echo
-  echo "Project dir:"
-  echo "  $PROJECT_DIR"
+  echo "2. Run OpenEvolve (example):"
+  echo "   python3 openevolve/openevolve-run.py \\"
+  echo "     examples/function_minimization/initial_program.py \\"
+  echo "     examples/function_minimization/evaluator.py \\"
+  echo "     --config examples/function_minimization/config.yaml"
+  echo
+  echo "3. Project directory:"
+  echo "   $PROJECT_DIR"
+  echo
 }
 
 main "$@"

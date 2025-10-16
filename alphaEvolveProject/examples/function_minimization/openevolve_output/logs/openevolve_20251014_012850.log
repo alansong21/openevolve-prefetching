@@ -1,0 +1,119 @@
+2025-10-14 01:28:50,832 - openevolve.controller - INFO - Logging to openevolve-prefetching/alphaEvolveProject/examples/function_minimization/openevolve_output/logs/openevolve_20251014_012850.log
+2025-10-14 01:28:50,837 - openevolve.controller - INFO - Set random seed to 42 for reproducibility
+2025-10-14 01:28:50,866 - openevolve.llm.openai - INFO - Initialized OpenAI LLM with model: gpt-4.1-2025-04-14
+2025-10-14 01:28:50,866 - openevolve.llm.ensemble - INFO - Initialized LLM ensemble with models: gpt-4.1-2025-04-14 (weight: 1.00)
+2025-10-14 01:28:50,876 - openevolve.prompt.sampler - INFO - Initialized prompt sampler
+2025-10-14 01:28:50,876 - openevolve.prompt.sampler - INFO - Set custom templates: system=evaluator_system_message, user=None
+2025-10-14 01:28:50,876 - openevolve.database - INFO - Initialized program database with 0 programs
+2025-10-14 01:28:50,877 - openevolve.evaluator - INFO - Successfully loaded evaluation function from openevolve-prefetching/alphaEvolveProject/examples/function_minimization/evaluator.py
+2025-10-14 01:28:50,877 - openevolve.evaluator - INFO - Initialized evaluator with openevolve-prefetching/alphaEvolveProject/examples/function_minimization/evaluator.py
+2025-10-14 01:28:50,877 - openevolve.controller - INFO - Initialized OpenEvolve with openevolve-prefetching/alphaEvolveProject/examples/function_minimization/initial_program.py
+2025-10-14 01:28:50,877 - openevolve.controller - INFO - Adding initial program to database
+2025-10-14 01:28:50,904 - openevolve.evaluator - INFO - Evaluated program 538d0b27-d930-4513-98e1-f3de8f70976d in 0.03s: runs_successfully=1.0000, value_score=0.9418, distance_score=0.7566, combined_score=1.2148
+2025-10-14 01:28:50,904 - openevolve.database - INFO - New MAP-Elites cell occupied in island 0: {'complexity': 5, 'diversity': 0}
+2025-10-14 01:28:50,906 - openevolve.process_parallel - INFO - Initialized process parallel controller with 3 workers
+2025-10-14 01:28:50,907 - openevolve.process_parallel - INFO - Started process pool with 3 processes
+2025-10-14 01:28:50,907 - openevolve.controller - INFO - Using island-based evolution with 3 islands
+2025-10-14 01:28:50,908 - openevolve.database - INFO - Island Status:
+2025-10-14 01:28:50,908 - openevolve.database - INFO -  * Island 0: 1 programs, best=1.2148, avg=1.2148, diversity=0.00, gen=0 (best: 538d0b27-d930-4513-98e1-f3de8f70976d)
+2025-10-14 01:28:50,908 - openevolve.database - INFO -    Island 1: 0 programs, best=0.0000, avg=0.0000, diversity=0.00, gen=0
+2025-10-14 01:28:50,908 - openevolve.database - INFO -    Island 2: 0 programs, best=0.0000, avg=0.0000, diversity=0.00, gen=0
+2025-10-14 01:28:50,908 - openevolve.process_parallel - INFO - Starting process-based evolution from iteration 1 for 50 iterations (total: 51)
+2025-10-14 01:28:50,921 - openevolve.process_parallel - INFO - Early stopping disabled
+2025-10-14 01:28:50,961 - openevolve.prompt.sampler - INFO - Set custom templates: system=evaluator_system_message, user=None
+2025-10-14 01:28:50,962 - openevolve.evaluator - INFO - Successfully loaded evaluation function from openevolve-prefetching/alphaEvolveProject/examples/function_minimization/evaluator.py
+2025-10-14 01:28:50,962 - openevolve.evaluator - INFO - Initialized evaluator with openevolve-prefetching/alphaEvolveProject/examples/function_minimization/evaluator.py
+2025-10-14 01:28:50,963 - openevolve.prompt.sampler - INFO - Set custom templates: system=evaluator_system_message, user=None
+2025-10-14 01:28:50,963 - openevolve.prompt.sampler - INFO - Set custom templates: system=evaluator_system_message, user=None
+2025-10-14 01:28:50,964 - openevolve.evaluator - INFO - Successfully loaded evaluation function from openevolve-prefetching/alphaEvolveProject/examples/function_minimization/evaluator.py
+2025-10-14 01:28:50,964 - openevolve.evaluator - INFO - Initialized evaluator with openevolve-prefetching/alphaEvolveProject/examples/function_minimization/evaluator.py
+2025-10-14 01:28:50,964 - openevolve.evaluator - INFO - Successfully loaded evaluation function from openevolve-prefetching/alphaEvolveProject/examples/function_minimization/evaluator.py
+2025-10-14 01:28:50,964 - openevolve.evaluator - INFO - Initialized evaluator with openevolve-prefetching/alphaEvolveProject/examples/function_minimization/evaluator.py
+2025-10-14 01:28:50,964 - openevolve.llm.ensemble - INFO - Sampled model: gpt-4.1-2025-04-14
+2025-10-14 01:28:50,965 - openevolve.llm.ensemble - INFO - Sampled model: gpt-4.1-2025-04-14
+2025-10-14 01:28:50,965 - openevolve.llm.ensemble - INFO - Sampled model: gpt-4.1-2025-04-14
+2025-10-14 01:28:51,217 - openai._base_client - INFO - Retrying request to /chat/completions in 0.482678 seconds
+2025-10-14 01:28:51,217 - openai._base_client - INFO - Retrying request to /chat/completions in 0.405801 seconds
+2025-10-14 01:28:51,219 - openai._base_client - INFO - Retrying request to /chat/completions in 0.404626 seconds
+2025-10-14 01:28:51,646 - openai._base_client - INFO - Retrying request to /chat/completions in 0.962328 seconds
+2025-10-14 01:28:51,647 - openai._base_client - INFO - Retrying request to /chat/completions in 0.950779 seconds
+2025-10-14 01:28:51,725 - openai._base_client - INFO - Retrying request to /chat/completions in 0.995537 seconds
+2025-10-14 01:28:52,622 - openai._base_client - INFO - Retrying request to /chat/completions in 1.614965 seconds
+2025-10-14 01:28:52,631 - openai._base_client - INFO - Retrying request to /chat/completions in 1.601589 seconds
+2025-10-14 01:28:52,743 - openai._base_client - INFO - Retrying request to /chat/completions in 1.506680 seconds
+2025-10-14 01:28:54,256 - openevolve.llm.openai - WARNING - Error on attempt 1/4: Connection error.. Retrying...
+2025-10-14 01:28:54,260 - openevolve.llm.openai - WARNING - Error on attempt 1/4: Connection error.. Retrying...
+2025-10-14 01:28:54,273 - openevolve.llm.openai - WARNING - Error on attempt 1/4: Connection error.. Retrying...
+2025-10-14 01:28:58,416 - openevolve.controller - INFO - Received signal 2, initiating graceful shutdown...
+2025-10-14 01:28:58,416 - openevolve.controller - INFO - Received signal 2, initiating graceful shutdown...
+2025-10-14 01:28:58,416 - openevolve.controller - INFO - Received signal 2, initiating graceful shutdown...
+2025-10-14 01:28:58,416 - openevolve.controller - INFO - Received signal 2, initiating graceful shutdown...
+2025-10-14 01:28:58,416 - openevolve.process_parallel - INFO - Graceful shutdown requested...
+2025-10-14 01:28:58,416 - openevolve.process_parallel - INFO - Graceful shutdown requested...
+2025-10-14 01:28:58,416 - openevolve.process_parallel - INFO - Graceful shutdown requested...
+2025-10-14 01:28:58,416 - openevolve.process_parallel - INFO - Graceful shutdown requested...
+2025-10-14 01:28:58,418 - openevolve.process_parallel - INFO - Shutdown requested, canceling remaining evaluations...
+2025-10-14 01:28:58,418 - openevolve.process_parallel - INFO - ✅ Evolution completed - Shutdown requested
+2025-10-14 01:28:58,418 - openevolve.controller - INFO - Evolution stopped due to shutdown request
+2025-10-14 01:28:59,286 - openai._base_client - INFO - Retrying request to /chat/completions in 0.401976 seconds
+2025-10-14 01:28:59,286 - openai._base_client - INFO - Retrying request to /chat/completions in 0.419765 seconds
+2025-10-14 01:28:59,307 - openai._base_client - INFO - Retrying request to /chat/completions in 0.463988 seconds
+2025-10-14 01:28:59,712 - openai._base_client - INFO - Retrying request to /chat/completions in 0.805878 seconds
+2025-10-14 01:28:59,731 - openai._base_client - INFO - Retrying request to /chat/completions in 0.781613 seconds
+2025-10-14 01:28:59,795 - openai._base_client - INFO - Retrying request to /chat/completions in 0.932766 seconds
+2025-10-14 01:29:00,537 - openai._base_client - INFO - Retrying request to /chat/completions in 1.542235 seconds
+2025-10-14 01:29:00,541 - openai._base_client - INFO - Retrying request to /chat/completions in 1.769086 seconds
+2025-10-14 01:29:00,750 - openai._base_client - INFO - Retrying request to /chat/completions in 1.711558 seconds
+2025-10-14 01:29:02,103 - openevolve.llm.openai - WARNING - Error on attempt 2/4: Connection error.. Retrying...
+2025-10-14 01:29:02,334 - openevolve.llm.openai - WARNING - Error on attempt 2/4: Connection error.. Retrying...
+2025-10-14 01:29:02,485 - openevolve.llm.openai - WARNING - Error on attempt 2/4: Connection error.. Retrying...
+2025-10-14 01:29:07,136 - openai._base_client - INFO - Retrying request to /chat/completions in 0.461682 seconds
+2025-10-14 01:29:07,364 - openai._base_client - INFO - Retrying request to /chat/completions in 0.390226 seconds
+2025-10-14 01:29:07,516 - openai._base_client - INFO - Retrying request to /chat/completions in 0.480448 seconds
+2025-10-14 01:29:07,620 - openai._base_client - INFO - Retrying request to /chat/completions in 0.961216 seconds
+2025-10-14 01:29:07,777 - openai._base_client - INFO - Retrying request to /chat/completions in 0.951924 seconds
+2025-10-14 01:29:08,019 - openai._base_client - INFO - Retrying request to /chat/completions in 0.861474 seconds
+2025-10-14 01:29:08,603 - openai._base_client - INFO - Retrying request to /chat/completions in 1.772295 seconds
+2025-10-14 01:29:08,753 - openai._base_client - INFO - Retrying request to /chat/completions in 1.516329 seconds
+2025-10-14 01:29:08,904 - openai._base_client - INFO - Retrying request to /chat/completions in 1.765522 seconds
+2025-10-14 01:29:10,293 - openevolve.llm.openai - WARNING - Error on attempt 3/4: Connection error.. Retrying...
+2025-10-14 01:29:10,399 - openevolve.llm.openai - WARNING - Error on attempt 3/4: Connection error.. Retrying...
+2025-10-14 01:29:10,696 - openevolve.llm.openai - WARNING - Error on attempt 3/4: Connection error.. Retrying...
+2025-10-14 01:29:15,325 - openai._base_client - INFO - Retrying request to /chat/completions in 0.399366 seconds
+2025-10-14 01:29:15,429 - openai._base_client - INFO - Retrying request to /chat/completions in 0.388432 seconds
+2025-10-14 01:29:15,728 - openai._base_client - INFO - Retrying request to /chat/completions in 0.440357 seconds
+2025-10-14 01:29:15,746 - openai._base_client - INFO - Retrying request to /chat/completions in 0.784093 seconds
+2025-10-14 01:29:15,841 - openai._base_client - INFO - Retrying request to /chat/completions in 0.809542 seconds
+2025-10-14 01:29:16,192 - openai._base_client - INFO - Retrying request to /chat/completions in 0.992668 seconds
+2025-10-14 01:29:16,552 - openai._base_client - INFO - Retrying request to /chat/completions in 1.751347 seconds
+2025-10-14 01:29:16,676 - openai._base_client - INFO - Retrying request to /chat/completions in 1.662681 seconds
+2025-10-14 01:29:17,207 - openai._base_client - INFO - Retrying request to /chat/completions in 1.907247 seconds
+2025-10-14 01:29:18,329 - openevolve.llm.openai - ERROR - All 4 attempts failed with error: Connection error.
+2025-10-14 01:29:18,331 - openevolve.process_parallel - ERROR - LLM generation failed: Connection error.
+2025-10-14 01:29:18,333 - openevolve.llm.ensemble - INFO - Sampled model: gpt-4.1-2025-04-14
+2025-10-14 01:29:18,360 - openai._base_client - INFO - Retrying request to /chat/completions in 0.476845 seconds
+2025-10-14 01:29:18,364 - openevolve.llm.openai - ERROR - All 4 attempts failed with error: Connection error.
+2025-10-14 01:29:18,366 - openevolve.process_parallel - ERROR - LLM generation failed: Connection error.
+2025-10-14 01:29:18,368 - openevolve.llm.ensemble - INFO - Sampled model: gpt-4.1-2025-04-14
+2025-10-14 01:29:18,397 - openai._base_client - INFO - Retrying request to /chat/completions in 0.375967 seconds
+2025-10-14 01:29:18,796 - openai._base_client - INFO - Retrying request to /chat/completions in 0.792151 seconds
+2025-10-14 01:29:18,862 - openai._base_client - INFO - Retrying request to /chat/completions in 0.892914 seconds
+2025-10-14 01:29:19,141 - openevolve.llm.openai - ERROR - All 4 attempts failed with error: Connection error.
+2025-10-14 01:29:19,143 - openevolve.process_parallel - ERROR - LLM generation failed: Connection error.
+2025-10-14 01:29:19,145 - openevolve.llm.ensemble - INFO - Sampled model: gpt-4.1-2025-04-14
+2025-10-14 01:29:19,172 - openai._base_client - INFO - Retrying request to /chat/completions in 0.385797 seconds
+2025-10-14 01:29:19,581 - openai._base_client - INFO - Retrying request to /chat/completions in 0.910716 seconds
+2025-10-14 01:29:19,612 - openai._base_client - INFO - Retrying request to /chat/completions in 1.633473 seconds
+2025-10-14 01:29:19,778 - openai._base_client - INFO - Retrying request to /chat/completions in 1.947298 seconds
+2025-10-14 01:29:20,515 - openai._base_client - INFO - Retrying request to /chat/completions in 1.697265 seconds
+2025-10-14 01:29:21,269 - openevolve.llm.openai - WARNING - Error on attempt 1/4: Connection error.. Retrying...
+2025-10-14 01:29:21,748 - openevolve.llm.openai - WARNING - Error on attempt 1/4: Connection error.. Retrying...
+2025-10-14 01:29:22,235 - openevolve.llm.openai - WARNING - Error on attempt 1/4: Connection error.. Retrying...
+2025-10-14 01:29:25,926 - openevolve.controller - INFO - Force exit requested - terminating immediately
+2025-10-14 01:29:25,926 - openevolve.controller - INFO - Force exit requested - terminating immediately
+2025-10-14 01:29:25,926 - openevolve.controller - INFO - Force exit requested - terminating immediately
+2025-10-14 01:29:25,926 - openevolve.controller - INFO - Force exit requested - terminating immediately
+2025-10-14 01:30:23,424 - openevolve.controller - INFO - Force exit requested - terminating immediately
+2025-10-14 01:30:23,424 - openevolve.controller - INFO - Force exit requested - terminating immediately
+2025-10-14 01:30:23,424 - openevolve.controller - INFO - Force exit requested - terminating immediately
+2025-10-14 01:30:23,424 - openevolve.controller - INFO - Force exit requested - terminating immediately
