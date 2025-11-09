@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+sudo apt-get update
+sudo apt-get install -y pkg-config build-essential cmake ninja-build curl git unzip tar zip xz-utils
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
