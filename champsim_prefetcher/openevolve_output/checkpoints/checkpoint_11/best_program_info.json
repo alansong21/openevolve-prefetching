@@ -1,0 +1,16 @@
+{
+  "id": "623370fa-874b-4ea9-8144-5a2b03013173",
+  "generation": 0,
+  "iteration": 0,
+  "current_iteration": 11,
+  "metrics": {
+    "ipc": 1.329,
+    "combined_score": 1.329,
+    "build_time_s": 1.5761353969573975,
+    "sim_time_s": 850.9261682033539,
+    "wall_time_s": 852.503915309906
+  },
+  "language": "cpp",
+  "timestamp": 1763431006.0393882,
+  "saved_at": 1763439776.299835
+}

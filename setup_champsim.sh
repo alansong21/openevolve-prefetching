@@ -8,6 +8,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+OPENEVOLVE_CONFIG="$SCRIPT_DIR/champsim_prefetcher/champsim_config.json"
+
 TRACE_URL="https://dpc3.compas.cs.stonybrook.edu/champsim-traces/speccpu/400.perlbench-41B.champsimtrace.xz"
 TRACE_FILE="400.perlbench-41B.champsimtrace.xz"
 
@@ -37,7 +39,12 @@ echo "Installing vcpkg dependencies..."
 ./vcpkg/vcpkg install
 
 echo "Running ChampSim configuration..."
-./config.sh
+if [[ -f "$OPENEVOLVE_CONFIG" ]]; then
+  echo "Using configuration at $OPENEVOLVE_CONFIG"
+  ./config.sh "$OPENEVOLVE_CONFIG"
+else
+  ./config.sh
+fi
 
 echo "Building ChampSim..."
 make
