@@ -1,0 +1,49 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.mypy_cache/
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Build outputs
+build/
+dist/
+*.egg-info/
+cmake-build*/
+CMakeFiles/
+CMakeCache.txt
+
+# Native compilation products
+*.o
+*.obj
+*.so
+*.dylib
+*.dll
+*.a
+*.lib
+*.la
+*.lo
+*.out
+*.exe
+
+# ChampSim and prefetcher binaries
+ChampSim/bin/
+ChampSim/build/
+champsim_prefetcher/bin/
+champsim_prefetcher/build/
+
+# Generated traces and datasets
+*.champsimtrace*
+
+# Miscellaneous
+*.log
+*.tmp
+*.swp
+*.swo
+.DS_Store
