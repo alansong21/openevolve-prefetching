@@ -43,6 +43,7 @@ champsim_prefetcher/build/
 
 # OpenEvolve outputs
 **/openevolve_output*/
+champsim_prefetcher/openevolve_output/*
 
 # Miscellaneous
 *.log
