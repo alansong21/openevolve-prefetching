@@ -41,6 +41,9 @@ champsim_prefetcher/build/
 # Generated traces and datasets
 *.champsimtrace*
 
+# OpenEvolve outputs
+**/openevolve_output*/
+
 # Miscellaneous
 *.log
 *.tmp
