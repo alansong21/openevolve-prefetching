@@ -3,4 +3,4 @@
 	url = https://github.com/codelion/openevolve.git
 [submodule "ChampSim"]
 	path = ChampSim
-	url = https://github.com/ChampSim/ChampSim.git
+	url = https://github.com/CMU-SAFARI/ChampSim.git
