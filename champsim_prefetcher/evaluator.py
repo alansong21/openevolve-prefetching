@@ -16,6 +16,7 @@ from openevolve.evaluation_result import EvaluationResult
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CHAMPSIM_ROOT = REPO_ROOT / "ChampSim"
 PREFETCHER_CC = Path(__file__).with_name("initial_program.cc")
+PREFETCHER_OBJ_DIR = CHAMPSIM_ROOT / ".csconfig" / "modules" / "prefetcher" / "openevolve_prefetcher"
 CONFIG_PATH = Path(__file__).with_name("champsim_config.json").resolve()
 TRACE_PATH = Path(os.environ.get("CHAMPSIM_TRACE", REPO_ROOT / "400.perlbench-41B.champsimtrace.xz")).expanduser()
 CHAMPSIM_BIN = CHAMPSIM_ROOT / "bin" / "champsim"
@@ -129,6 +130,28 @@ def _copy_candidate(program_path: Path) -> None:
     shutil.copy(program_path, PREFETCHER_CC)
 
 
+def _invalidate_prefetcher_object() -> None:
+    """Force ChampSim to rebuild the OpenEvolve prefetcher module and binary."""
+
+    try:
+        shutil.rmtree(PREFETCHER_OBJ_DIR)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        # Fall back to unlinking individual artifacts if the directory cannot be removed
+        for artifact in ("openevolve_prefetcher.o", "openevolve_prefetcher.d"):
+            path = PREFETCHER_OBJ_DIR / artifact
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                continue
+
+    try:
+        CHAMPSIM_BIN.unlink()
+    except FileNotFoundError:
+        pass
+
+
 def _parse_ipc(stdout: str) -> float:
     matches = IPC_PATTERN.findall(stdout)
     if not matches:
@@ -175,6 +198,7 @@ def evaluate(program_path: str) -> EvaluationResult:
         _ensure_prerequisites()
         _ensure_configuration()
         _copy_candidate(program_path)
+        _invalidate_prefetcher_object()
     except Exception as exc:  # pylint: disable=broad-except
         return _failure_result(f"Setup failed: {exc}")
 

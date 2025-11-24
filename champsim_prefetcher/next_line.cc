@@ -5,12 +5,7 @@
 
 // EVOLVE-BLOCK-START
 
-void openevolve_prefetcher::prefetcher_initialize() {
-    // Initialize state variables for tracking strides and prefetch degrees
-    last_accessed_block = 0;
-    stride = 0;
-    prefetch_degree = (cache_hit) ? std::min(5, prefetch_degree + 1) : std::max(1, prefetch_degree - 1); // Adjust prefetch degree based on hit/miss context
-}
+void openevolve_prefetcher::prefetcher_initialize() {}
 
 uint32_t openevolve_prefetcher::prefetcher_cache_operate(champsim::address addr, champsim::address ip, uint8_t cache_hit, bool useful_prefetch,
                                                          access_type type, uint32_t metadata_in)
@@ -23,23 +18,9 @@ uint32_t openevolve_prefetcher::prefetcher_cache_operate(champsim::address addr,
     return metadata_in;
 
   champsim::block_number current_block{addr};
-  // Calculate the stride based on the last accessed block
-  stride = current_block - last_accessed_block;
-  
-  // Update the last accessed block
-  last_accessed_block = current_block;
+  champsim::block_number next_block{current_block + 1};
 
-  // Prefetch multiple lines based on the inferred stride
-  for (int i = 1; i <= prefetch_degree; i++) {
-      champsim::block_number next_block{current_block + (i * stride)};
-      prefetch_line(champsim::address{next_block}, true, metadata_in);
-  }
-
-  // Prefetch multiple lines based on the inferred stride
-  for (int i = 1; i <= prefetch_degree; i++) {
-      champsim::block_number next_block{current_block + (i * stride)};
-      prefetch_line(champsim::address{next_block}, true, metadata_in);
-  }
+  prefetch_line(champsim::address{next_block}, true, metadata_in);
   return metadata_in;
 }
 
