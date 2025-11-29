@@ -7,15 +7,21 @@ by the resulting IPC.
 
 ## Prerequisites
 
-1. Build ChampSim and download at least one trace:
+1. Bootstrap the environment (Miniforge/conda env `oe311` + OpenEvolve + submodules):
+
+   ```bash
+   ./setup_shim
+   ```
+
+2. Build ChampSim and download at least one trace:
 
    ```bash
    ./setup_champsim.sh
    ```
 
-   The script installs dependencies, downloads `400.perlbench-41B...xz`, and runs
+   The script installs system dependencies, downloads `400.perlbench-41B...xz`, wires the thin `openevolve_prefetcher` shim, and runs
    `./config.sh champsim_prefetcher/champsim_config.json`
-   so the new `openevolve_prefetcher` module is enabled at L2.
+   so the new module is enabled at L2.
 
 2. Export your API key for whatever LLM you list in `config.yaml` (defaults to
    OpenAI-style models):
