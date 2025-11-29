@@ -9,6 +9,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 OPENEVOLVE_CONFIG="$SCRIPT_DIR/champsim_prefetcher/champsim_config.json"
+OPENEVOLVE_SOURCE_DIR="$SCRIPT_DIR/champsim_prefetcher"
+OPENEVOLVE_TARGET_DIR="$SCRIPT_DIR/ChampSim/prefetcher/openevolve_prefetcher"
 
 TRACE_URL="https://dpc3.compas.cs.stonybrook.edu/champsim-traces/speccpu/400.perlbench-41B.champsimtrace.xz"
 TRACE_FILE="400.perlbench-41B.champsimtrace.xz"
@@ -31,6 +33,25 @@ cd ChampSim
 
 echo "Updating git submodules..."
 git submodule update --init
+
+echo "Syncing OpenEvolve prefetcher sources into ChampSim..."
+mkdir -p "$OPENEVOLVE_TARGET_DIR"
+if [[ ! -f "$OPENEVOLVE_SOURCE_DIR/openevolve_prefetcher.h" || ! -f "$OPENEVOLVE_SOURCE_DIR/initial_program.cc" ]]; then
+  echo "Error: expected OpenEvolve prefetcher sources missing in $OPENEVOLVE_SOURCE_DIR" >&2
+  exit 1
+fi
+cat >"$OPENEVOLVE_TARGET_DIR/openevolve_prefetcher.h" <<'EOF'
+#ifndef PREFETCHER_OPENEVOLVE_PREFETCHER_H
+#define PREFETCHER_OPENEVOLVE_PREFETCHER_H
+
+#include "../../../../champsim_prefetcher/openevolve_prefetcher.h"
+
+#endif
+EOF
+
+cat >"$OPENEVOLVE_TARGET_DIR/openevolve_prefetcher.cc" <<'EOF'
+#include "../../../../champsim_prefetcher/initial_program.cc"
+EOF
 
 echo "Bootstrapping vcpkg..."
 ./vcpkg/bootstrap-vcpkg.sh
