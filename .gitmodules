@@ -4,3 +4,6 @@
 [submodule "ChampSim"]
 	path = ChampSim
 	url = https://github.com/CMU-SAFARI/ChampSim.git
+[submodule "cloudlab-lib"]
+	path = cloudlab-lib
+	url = https://github.com/varungohil/cloudlab-lib.git
