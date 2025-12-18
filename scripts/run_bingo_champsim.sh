@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 
-# Run ChampSim with the IPCP prefetchers without invoking OpenEvolve.
+# Run ChampSim with the Bingo prefetchers without invoking OpenEvolve.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CHAMPSIM_DIR="$REPO_ROOT/ChampSim"
-PREFETCHER_ROOT="$REPO_ROOT/champsim_prefetcher/ipcp"
+PREFETCHER_ROOT="$REPO_ROOT/champsim_prefetcher"
 DEFAULT_TRACE="$REPO_ROOT/400.perlbench-41B.champsimtrace.xz"
+CONFIG_SOURCE="$PREFETCHER_ROOT/champsim_config_bingo.json"
 
 TRACE_PATH="${1:-$DEFAULT_TRACE}"
 WARMUP_INSTR="${CHAMPSIM_WARMUP_INSTR:-10000000}"
@@ -26,14 +27,18 @@ detect_jobs() {
 
 JOBS="$(detect_jobs)"
 
-sync_ipcp_prefetchers() {
-  for pf in ipcp_l1d ipcp_l2c; do
-    local src_cc="$PREFETCHER_ROOT/${pf}.cc"
-    local src_h="$PREFETCHER_ROOT/${pf}.h"
+sync_bingo_prefetchers() {
+  # Remove other custom prefetchers that might conflict with symbol names.
+  rm -rf "$CHAMPSIM_DIR/prefetcher/mlop_l1d" "$CHAMPSIM_DIR/prefetcher/mlop_l2c" "$CHAMPSIM_DIR/prefetcher/mlop_llc"
+
+  local src_dir="$PREFETCHER_ROOT/bingo"
+  for pf in bingo_l1d bingo_l2c bingo_llc; do
+    local src_cc="$src_dir/${pf}.cc"
+    local src_h="$src_dir/${pf}.h"
     local dest_dir="$CHAMPSIM_DIR/prefetcher/${pf}"
 
     if [[ ! -f "$src_cc" || ! -f "$src_h" ]]; then
-      echo "Missing IPCP source files for $pf in $PREFETCHER_ROOT" >&2
+      echo "Missing Bingo source files for $pf in $src_dir" >&2
       exit 1
     fi
 
@@ -44,15 +49,16 @@ sync_ipcp_prefetchers() {
 }
 
 sync_config() {
-  local src_cfg="$PREFETCHER_ROOT/champsim_config.json"
-  local dest_cfg="$CHAMPSIM_DIR/champsim_config.json"
-
-  if [[ ! -f "$src_cfg" ]]; then
-    echo "Missing ChampSim config at $src_cfg" >&2
+  if [[ ! -f "$CONFIG_SOURCE" ]]; then
+    echo "Missing ChampSim config for Bingo at $CONFIG_SOURCE" >&2
     exit 1
   fi
 
-  cp "$src_cfg" "$dest_cfg"
+  cp "$CONFIG_SOURCE" "$CHAMPSIM_DIR/champsim_config.json"
+}
+
+reset_build_artifacts() {
+  rm -rf "$CHAMPSIM_DIR/.csconfig"
 }
 
 run_champsim() {
@@ -78,6 +84,7 @@ run_champsim() {
   popd >/dev/null
 }
 
-sync_ipcp_prefetchers
+sync_bingo_prefetchers
 sync_config
+reset_build_artifacts
 run_champsim
