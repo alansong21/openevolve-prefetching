@@ -7,7 +7,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CHAMPSIM_DIR="$REPO_ROOT/ChampSim"
-PREFETCHER_ROOT="$REPO_ROOT/champsim_prefetcher/ipcp"
+PREFETCHER_ROOT="$REPO_ROOT/prefetchers/ipcp"
 DEFAULT_TRACE="$REPO_ROOT/400.perlbench-41B.champsimtrace.xz"
 
 TRACE_PATH="${1:-$DEFAULT_TRACE}"
@@ -26,21 +26,44 @@ detect_jobs() {
 
 JOBS="$(detect_jobs)"
 
+ensure_openevolve_prefetcher_shim() {
+  local components_dir="$REPO_ROOT/openevolve-components"
+  local shim_dir="$CHAMPSIM_DIR/prefetcher/openevolve_prefetcher"
+
+  if [[ ! -f "$components_dir/openevolve_prefetcher.h" || ! -f "$components_dir/initial_program.cc" ]]; then
+    echo "Missing OpenEvolve shim sources under $components_dir. Re-run setup_champsim.sh." >&2
+    exit 1
+  fi
+
+  mkdir -p "$shim_dir"
+
+  cat >"$shim_dir/openevolve_prefetcher.h" <<'EOF'
+#ifndef PREFETCHER_OPENEVOLVE_PREFETCHER_H
+#define PREFETCHER_OPENEVOLVE_PREFETCHER_H
+
+#include "../../../../openevolve-components/openevolve_prefetcher.h"
+
+#endif
+EOF
+
+  cat >"$shim_dir/openevolve_prefetcher.cc" <<'EOF'
+#include "../../../../openevolve-components/initial_program.cc"
+EOF
+}
+
 sync_ipcp_prefetchers() {
-  for pf in ipcp_l1d ipcp_l2c; do
-    local src_cc="$PREFETCHER_ROOT/${pf}.cc"
-    local src_h="$PREFETCHER_ROOT/${pf}.h"
-    local dest_dir="$CHAMPSIM_DIR/prefetcher/${pf}"
+  local src_cc="$PREFETCHER_ROOT/ipcp_l1d.cc"
+  local src_h="$PREFETCHER_ROOT/ipcp_l1d.h"
+  local dest_dir="$CHAMPSIM_DIR/prefetcher/ipcp_l1d"
 
-    if [[ ! -f "$src_cc" || ! -f "$src_h" ]]; then
-      echo "Missing IPCP source files for $pf in $PREFETCHER_ROOT" >&2
-      exit 1
-    fi
+  if [[ ! -f "$src_cc" || ! -f "$src_h" ]]; then
+    echo "Missing IPCP source files in $PREFETCHER_ROOT" >&2
+    exit 1
+  fi
 
-    mkdir -p "$dest_dir"
-    cp "$src_cc" "$dest_dir/"
-    cp "$src_h" "$dest_dir/"
-  done
+  mkdir -p "$dest_dir"
+  cp "$src_cc" "$dest_dir/"
+  cp "$src_h" "$dest_dir/"
 }
 
 sync_config() {
@@ -78,6 +101,7 @@ run_champsim() {
   popd >/dev/null
 }
 
+ensure_openevolve_prefetcher_shim
 sync_ipcp_prefetchers
 sync_config
 run_champsim

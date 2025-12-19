@@ -7,9 +7,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CHAMPSIM_DIR="$REPO_ROOT/ChampSim"
-PREFETCHER_ROOT="$REPO_ROOT/champsim_prefetcher"
+PREFETCHER_ROOT="$REPO_ROOT/prefetchers/mlop"
 DEFAULT_TRACE="$REPO_ROOT/400.perlbench-41B.champsimtrace.xz"
-CONFIG_SOURCE="$PREFETCHER_ROOT/champsim_config_mlop.json"
+CONFIG_SOURCE="$PREFETCHER_ROOT/champsim_config.json"
 
 TRACE_PATH="${1:-$DEFAULT_TRACE}"
 WARMUP_INSTR="${CHAMPSIM_WARMUP_INSTR:-10000000}"
@@ -27,25 +27,44 @@ detect_jobs() {
 
 JOBS="$(detect_jobs)"
 
+ensure_openevolve_prefetcher_shim() {
+  local components_dir="$REPO_ROOT/openevolve-components"
+  local shim_dir="$CHAMPSIM_DIR/prefetcher/openevolve_prefetcher"
+
+  if [[ ! -f "$components_dir/openevolve_prefetcher.h" || ! -f "$components_dir/initial_program.cc" ]]; then
+    echo "Missing OpenEvolve shim sources under $components_dir. Re-run setup_champsim.sh." >&2
+    exit 1
+  fi
+
+  mkdir -p "$shim_dir"
+
+  cat >"$shim_dir/openevolve_prefetcher.h" <<'EOF'
+#ifndef PREFETCHER_OPENEVOLVE_PREFETCHER_H
+#define PREFETCHER_OPENEVOLVE_PREFETCHER_H
+
+#include "../../../../openevolve-components/openevolve_prefetcher.h"
+
+#endif
+EOF
+
+  cat >"$shim_dir/openevolve_prefetcher.cc" <<'EOF'
+#include "../../../../openevolve-components/initial_program.cc"
+EOF
+}
+
 sync_mlop_prefetchers() {
-  # Remove other custom prefetchers that might conflict with symbol names.
-  rm -rf "$CHAMPSIM_DIR/prefetcher/bingo_l1d" "$CHAMPSIM_DIR/prefetcher/bingo_l2c" "$CHAMPSIM_DIR/prefetcher/bingo_llc"
+  local src_cc="$PREFETCHER_ROOT/mlop_l1d.cc"
+  local src_h="$PREFETCHER_ROOT/mlop_l1d.h"
+  local dest_dir="$CHAMPSIM_DIR/prefetcher/mlop_l1d"
 
-  local src_dir="$PREFETCHER_ROOT/mlop"
-  for pf in mlop_l1d mlop_l2c mlop_llc; do
-    local src_cc="$src_dir/${pf}.cc"
-    local src_h="$src_dir/${pf}.h"
-    local dest_dir="$CHAMPSIM_DIR/prefetcher/${pf}"
+  if [[ ! -f "$src_cc" || ! -f "$src_h" ]]; then
+    echo "Missing MLOP source files in $PREFETCHER_ROOT" >&2
+    exit 1
+  fi
 
-    if [[ ! -f "$src_cc" || ! -f "$src_h" ]]; then
-      echo "Missing MLOP source files for $pf in $src_dir" >&2
-      exit 1
-    fi
-
-    mkdir -p "$dest_dir"
-    cp "$src_cc" "$dest_dir/"
-    cp "$src_h" "$dest_dir/"
-  done
+  mkdir -p "$dest_dir"
+  cp "$src_cc" "$dest_dir/"
+  cp "$src_h" "$dest_dir/"
 }
 
 sync_config() {
@@ -84,6 +103,7 @@ run_champsim() {
   popd >/dev/null
 }
 
+ensure_openevolve_prefetcher_shim
 sync_mlop_prefetchers
 sync_config
 reset_build_artifacts

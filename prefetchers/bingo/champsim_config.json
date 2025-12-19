@@ -68,7 +68,7 @@
     "prefetch_as_load": false,
     "virtual_prefetch": false,
     "prefetch_activate": "LOAD,PREFETCH",
-    "prefetcher": "mlop_l1d"
+    "prefetcher": "bingo_l1d"
   },
 
   "L2C": {
@@ -84,7 +84,7 @@
     "prefetch_as_load": false,
     "virtual_prefetch": false,
     "prefetch_activate": "LOAD,PREFETCH",
-    "prefetcher": "mlop_l2c"
+    "prefetcher": "next_line"
   },
 
   "ITLB": {
@@ -155,7 +155,7 @@
     "prefetch_as_load": false,
     "virtual_prefetch": false,
     "prefetch_activate": "LOAD,PREFETCH",
-    "prefetcher": "mlop_llc",
+    "prefetcher": "next_line",
     "replacement": "lru"
   },
 

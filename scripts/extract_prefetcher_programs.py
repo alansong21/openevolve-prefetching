@@ -77,9 +77,9 @@ def main() -> None:
     args = parse_args()
 
     repo_root = Path(__file__).resolve().parents[1]
-    output_root = repo_root / "champsim_prefetcher" / "openevolve_output" / "program_text"
-    checkpoints_root = repo_root / "champsim_prefetcher" / "openevolve_output" / "checkpoints"
-    logs_root = repo_root / "champsim_prefetcher" / "openevolve_output" / "logs"
+    output_root = repo_root / "openevolve-components" / "openevolve_output" / "program_text"
+    checkpoints_root = repo_root / "openevolve-components" / "openevolve_output" / "checkpoints"
+    logs_root = repo_root / "openevolve-components" / "openevolve_output" / "logs"
 
     if not checkpoints_root.exists():
         raise SystemExit(f"No checkpoints found at {checkpoints_root}")

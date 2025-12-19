@@ -6,6 +6,7 @@
 #include "address.h"
 #include "champsim.h"
 #include "modules.h"
+#include "cache.h"
 
 class openevolve_prefetcher : public champsim::modules::prefetcher
 {

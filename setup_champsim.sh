@@ -8,8 +8,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-OPENEVOLVE_CONFIG="$SCRIPT_DIR/champsim_prefetcher/champsim_config.json"
-OPENEVOLVE_SOURCE_DIR="$SCRIPT_DIR/champsim_prefetcher"
+OPENEVOLVE_CONFIG="$SCRIPT_DIR/openevolve-components/champsim_config.json"
+OPENEVOLVE_SOURCE_DIR="$SCRIPT_DIR/openevolve-components"
 OPENEVOLVE_TARGET_DIR="$SCRIPT_DIR/ChampSim/prefetcher/openevolve_prefetcher"
 
 TRACE_URL="https://dpc3.compas.cs.stonybrook.edu/champsim-traces/speccpu/400.perlbench-41B.champsimtrace.xz"
@@ -44,13 +44,13 @@ cat >"$OPENEVOLVE_TARGET_DIR/openevolve_prefetcher.h" <<'EOF'
 #ifndef PREFETCHER_OPENEVOLVE_PREFETCHER_H
 #define PREFETCHER_OPENEVOLVE_PREFETCHER_H
 
-#include "../../../../champsim_prefetcher/openevolve_prefetcher.h"
+#include "../../../../openevolve-components/openevolve_prefetcher.h"
 
 #endif
 EOF
 
 cat >"$OPENEVOLVE_TARGET_DIR/openevolve_prefetcher.cc" <<'EOF'
-#include "../../../../champsim_prefetcher/initial_program.cc"
+#include "../../../../openevolve-components/initial_program.cc"
 EOF
 
 echo "Bootstrapping vcpkg..."

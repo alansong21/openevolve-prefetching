@@ -20,7 +20,7 @@ by the resulting IPC.
    ```
 
    The script installs system dependencies, downloads `400.perlbench-41B...xz`, wires the thin `openevolve_prefetcher` shim, and runs
-   `./config.sh champsim_prefetcher/champsim_config.json`
+   `./config.sh openevolve-components/champsim_config.json`
    so the new module is enabled at L2.
 
 2. Export your API key for whatever LLM you list in `config.yaml` (defaults to
@@ -46,16 +46,16 @@ From the repository root:
 
 ```bash
 python openevolve/openevolve-run.py \
-  champsim_prefetcher/initial_program.cc \
-  champsim_prefetcher/evaluator.py \
-  --config champsim_prefetcher/config.yaml \
+  openevolve-components/initial_program.cc \
+  openevolve-components/evaluator.py \
+  --config openevolve-components/config.yaml \
   --iterations 5
 ```
 
 Each iteration performs the following:
 
 1. OpenEvolve emits a new `initial_program.cc` candidate.
-2. The evaluator overwrites `champsim_prefetcher/initial_program.cc` (the file
+2. The evaluator overwrites `openevolve-components/initial_program.cc` (the file
    that ChampSim includes via the thin module shim).
 3. `make -C ChampSim` rebuilds the binary (incremental after the first build).
 4. ChampSim runs the configured trace and prints per-core IPC.
@@ -69,12 +69,13 @@ Artifacts (trimmed ChampSim logs, build logs, etc.) are attached to the
 ## File Inventory
 
 ```
-champsim_prefetcher/
+openevolve-components/
 ├── README.md                ← this guide
 ├── initial_program.cc       ← seed prefetcher edited by OpenEvolve
 ├── evaluator.py             ← glue code that rebuilds ChampSim
 ├── config.yaml              ← small-iteration configuration tuned for long runs
-└── champsim_config.json     ← instructs config.sh to use openevolve_prefetcher
+├── champsim_config.json     ← instructs config.sh to use openevolve_prefetcher
+└── openevolve_output/…      ← logs/checkpoints/materialized programs
 ```
 
 The ChampSim module under `ChampSim/prefetcher/openevolve_prefetcher/` is now a

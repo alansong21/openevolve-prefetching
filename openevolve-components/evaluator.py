@@ -104,13 +104,13 @@ def _execute_with_stream(cmd, *, cwd: Path, timeout: int, label: str) -> Tuple[s
 
 
 def _ensure_configuration() -> None:
-    config_mk = CHAMPSIM_ROOT / "_configuration.mk"
-    if config_mk.exists():
-        return
     if not CONFIG_PATH.exists():
         raise FileNotFoundError(f"Missing ChampSim config file: {CONFIG_PATH}")
 
-    cmd = ["./config.sh", str(CONFIG_PATH)]
+    dest_cfg = CHAMPSIM_ROOT / "champsim_config.json"
+    shutil.copy(CONFIG_PATH, dest_cfg)
+
+    cmd = ["./config.sh", dest_cfg.name]
     output, _ = _execute_with_stream(cmd, cwd=CHAMPSIM_ROOT, timeout=BUILD_TIMEOUT, label="ChampSim config")
     _print_console_log("ChampSim config", output)
 
