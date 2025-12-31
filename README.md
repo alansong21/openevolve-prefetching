@@ -13,6 +13,11 @@ This repository wires OpenEvolve into the ChampSim simulator so evolution edits 
   ```bash
   pip install -r requirements.txt
   ```
+- Point the `openevolve` submodule at the maintained fork (fetch + push):
+  ```bash
+  git submodule update --init --recursive
+  git -C openevolve remote set-url origin https://github.com/alansong21/openevolve.git
+  ```
 - Run both setup scripts in order:
   1) Environment bootstrap (Miniforge/conda + OpenEvolve):
   ```bash

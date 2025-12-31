@@ -1,0 +1,63 @@
+max_iterations: 5
+checkpoint_interval: 1
+log_level: "DEBUG"
+language: cpp
+file_suffix: ".cc"
+
+evaluator:
+  timeout: 1800          # ChampSim runs are long; give the process time to finish
+  parallel_evaluations: 1 # Rebuilds are serialized to avoid clobbering artifacts
+  cascade_evaluation: false
+  use_llm_feedback: true   # Surface evaluator artifacts (build/run errors) back to the LLM
+
+llm:
+  api_base: "https://api.openai.com/v1"
+  models:
+    - name: "gpt-4o"
+      weight: 1.0
+  evaluator_models:
+    - name: "gpt-4o-mini"
+      weight: 1.0
+  retries: 5
+  retry_delay: 5
+  temperature: 0.4
+  max_tokens: 10000
+  timeout: 120
+
+prompt:
+  system_message: |
+    ### Goal
+    - Evolve the EVOLVE block in `openevolve_prefetcher` (`openevolve-components/initial_program.cc`) for the L2C prefetcher, aiming to beat the perlbench IPC baseline (> 1.207) with streaming/stride-style ideas.
+
+    ### Workflow
+    - Each iteration overwrites `initial_program.cc`, rebuilds ChampSim, and runs the configured trace. Artifacts (build/run logs, scores) are fed back.
+    - A context agent can fetch relevant ChampSim/OpenEvolve APIs and file snippets; rely on that agent for authoritative context rather than assuming prior knowledge.
+
+    ### Implementation guidance
+    - Propose one coherent improvement per edit (e.g., per-PC stride tracking, adaptive distance/degree, usefulness gating).
+    - Initialize and bound any state in `prefetcher_initialize`; keep designs explainable.
+    - Control aggressiveness with accuracy/usefulness signals to avoid bandwidth waste.
+
+    ### Success
+    - Builds cleanly, runs end-to-end, respects ChampSim APIs, and improves IPC beyond the baseline.
+
+    ### Response format
+    - Respond ONLY with SEARCH/REPLACE diff blocks in this exact format:
+      <<<<<<< SEARCH
+      (code to find)
+      =======
+      (code to replace)
+      >>>>>>> REPLACE
+    - Do not include prose or any text outside these blocks.
+  include_artifacts: true      # Add build/runtime artifacts (errors) into the LLM prompt
+  max_artifact_bytes: 40960    # Allow larger logs so build errors aren’t truncated
+
+# Keep the evolutionary population small so each expensive ChampSim run still makes progress.
+database[q]:
+  population_size: 12
+  archive_size: 6
+  num_islands: 1
+  exploration_ratio: 0.3
+  exploitation_ratio: 0.7
+  elite_selection_ratio: 0.1
+  log_prompts: true

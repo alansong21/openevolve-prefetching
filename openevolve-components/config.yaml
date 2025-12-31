@@ -100,6 +100,17 @@ prompt:
       • Aggressiveness must be gated by accuracy metrics to avoid bandwidth waste.
 
     =====================
+    RESPONSE FORMAT
+    =====================
+    - Respond ONLY with SEARCH/REPLACE diff blocks in the exact format:
+      <<<<<<< SEARCH
+      (code to find)
+      =======
+      (code to replace)
+      >>>>>>> REPLACE
+    - No prose, no extra text outside these blocks.
+
+    =====================
     CHAMPSIM TYPE SOURCES
     =====================
     ChampSim/inc/champsim.h

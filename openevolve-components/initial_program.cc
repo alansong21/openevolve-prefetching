@@ -1,126 +1,71 @@
+// Simple next-line prefetcher for ChampSim/OpenEvolve.
+// Paste this block into initial_program.cc to revert to the baseline behavior.
+
 #include "openevolve_prefetcher.h"
-#include <vector>
 
 // EVOLVE-BLOCK-START
 
-namespace {
-constexpr int NUM_IP_TABLE_L2_ENTRIES = 1024;
-constexpr int NUM_IP_INDEX_BITS = 10;
-constexpr int NUM_IP_TAG_BITS = 6;
+#include <unordered_map> // Use unordered map for faster access
 
-struct ip_tracker {
-  uint64_t ip_tag = 0;
-  uint16_t ip_valid = 0;
-  uint32_t pref_type = 0;
-  int stride = 0;
+struct StrideEntry {
+  champsim::block_number last_block;
+  int64_t primary_stride;
+  int64_t secondary_stride; // Add secondary stride for mixed pattern detection
+  int confidence; // Add confidence to track accuracy
 };
 
-std::vector<uint32_t> spec_nl_l2;
-std::vector<std::vector<ip_tracker>> trackers;
+std::unordered_map<uint64_t, StrideEntry> stride_table; // Change to unordered map for performance
 
-int decode_stride(uint32_t metadata)
-{
-  // Improved stride decoding with sign extension
-  int stride = static_cast<int>(metadata & 0x3F); // Extract lower 6 bits
-  if (metadata & 0x40) // Check if the stride is negative
-    stride |= 0xFFFFFFC0; // Sign extend to 32 bits
-  return stride;
-}
-} // namespace
-
-void openevolve_prefetcher::prefetcher_initialize()
-{
-  if (spec_nl_l2.size() != NUM_CPUS)
-    spec_nl_l2.assign(NUM_CPUS, 0);
-
-  if (trackers.size() != NUM_CPUS)
-    trackers.assign(NUM_CPUS, std::vector<ip_tracker>(NUM_IP_TABLE_L2_ENTRIES));
+void openevolve_prefetcher::prefetcher_initialize() {
+  stride_table.clear();
 }
 
 uint32_t openevolve_prefetcher::prefetcher_cache_operate(champsim::address addr, champsim::address ip, uint8_t cache_hit, bool useful_prefetch,
                                                          access_type type, uint32_t metadata_in)
 {
-  (void)cache_hit;
-  (void)useful_prefetch;
 
-  const auto cpu = intern_->cpu;
-  auto cl_addr = champsim::block_number{addr};
-  // Initialize prefetch degree and stride
-  int prefetch_degree = 1; // Start conservatively
-  int stride = decode_stride(metadata_in);
 
-  // Use a history of past strides to better predict future strides
-  static std::vector<int> stride_history(NUM_CPUS, 0);
-  stride_history[cpu] = stride_history[cpu] * 0.8 + stride * 0.2; // Simple moving average
+  uint64_t ip_val = ip.to<uint64_t>();
+  champsim::block_number current_block{addr};
+  int64_t current = current_block.to<int64_t>();
+  bool prefetch_issued = false;
 
-  // Adjust prefetch degree based on stride history and MSHR occupancy
-  if (useful_prefetch) {
-    prefetch_degree = std::min(prefetch_degree + 1, 4); // Increase degree if useful
-  } else {
-    prefetch_degree = std::max(prefetch_degree - 1, 1); // Decrease degree if not useful
-  }
+  auto it = stride_table.find(ip_val);
+  if (it != stride_table.end()) {
+    int64_t last = it->second.last_block.to<int64_t>();
+    int64_t stride = current - last;
 
-  if (intern_->get_mshr_occupancy_ratio() > 0.7) {
-    prefetch_degree = std::max(prefetch_degree - 1, 1); // Throttle if MSHR occupancy is high
-  }
-  uint32_t pref_type = metadata_in & 0xF00;
-  uint16_t ip_tag = (ip.to<uint64_t>() >> NUM_IP_INDEX_BITS) & ((1 << NUM_IP_TAG_BITS) - 1);
-
-  // Dynamic prefetch degree based on MSHR occupancy and usefulness
-  // Adjust prefetch degree based on past usefulness
-  if (useful_prefetch) {
-    prefetch_degree = std::min(prefetch_degree + 1, 4); // Increase degree if useful
-  } else {
-    prefetch_degree = std::max(prefetch_degree - 1, 1); // Decrease degree if not useful
-  }
-
-  int index = static_cast<int>(ip.to<uint64_t>() & ((1ULL << NUM_IP_INDEX_BITS) - 1));
-  if (trackers[cpu][index].ip_tag != ip_tag) {
-    if (trackers[cpu][index].ip_valid == 0) {
-      trackers[cpu][index].ip_tag = ip_tag;
-      trackers[cpu][index].pref_type = pref_type;
-      trackers[cpu][index].stride = stride;
-    } else {
-      trackers[cpu][index].ip_valid = 0;
-    }
-
-    champsim::block_number pf_address{cl_addr.to<uint64_t>() + 1};
-    prefetch_line(champsim::address{pf_address}, intern_->get_mshr_occupancy_ratio() < 0.5, 0);
-    return metadata_in;
-  }
-
-  trackers[cpu][index].ip_valid = 1;
-
-  if (type == access_type::PREFETCH) {
-    trackers[cpu][index].pref_type = pref_type;
-    trackers[cpu][index].stride = stride;
-    spec_nl_l2[cpu] = metadata_in & 0x1000;
-  }
-
-  if (trackers[cpu][index].stride != 0 && trackers[cpu][index].ip_valid > 0) { // Confidence-based decision
-    // Use the average stride for more accurate prefetching
-    int effective_stride = stride_history[cpu];
-    if (trackers[cpu][index].pref_type == 0x100 || trackers[cpu][index].pref_type == 0x200) {
-      if (trackers[cpu][index].pref_type == 0x100 && NUM_CPUS == 1)
-        prefetch_degree = 4;
-
-      int lookahead = 1; // Adjust lookahead based on confidence
-      for (int i = 0; i < prefetch_degree * lookahead; i++) {
-        auto stride_step = champsim::block_number::difference_type(effective_stride * (i + 1));
-        champsim::block_number pf_address{cl_addr + stride_step};
-
-        if (champsim::page_number{pf_address} != champsim::page_number{cl_addr})
-          break;
-
-        // Issue prefetch only if MSHR occupancy is low and prefetch is likely useful
-        // Use metadata to track prefetch accuracy
-        prefetch_line(champsim::address{pf_address}, intern_->get_mshr_occupancy_ratio() < 0.5, metadata_in);
+    if ((stride == it->second.primary_stride || stride == it->second.secondary_stride) && it->second.confidence > 1) {
+      int prefetch_distance = std::min(3, it->second.confidence); // Limit prefetch distance to 3
+      for (int i = 1; i <= prefetch_distance; ++i) {
+        champsim::block_number next_block{current_block + stride * i};
+        prefetch_issued |= prefetch_line(champsim::address{next_block}, true, metadata_in);
       }
-    } else if (trackers[cpu][index].pref_type == 0x400 && spec_nl_l2[cpu] > 0) {
-      champsim::block_number pf_address{cl_addr.to<uint64_t>() + 1};
-      prefetch_line(champsim::address{pf_address}, intern_->get_mshr_occupancy_ratio() < 0.5, 0);
+      if (prefetch_issued) {
+        it->second.confidence = std::min(it->second.confidence + 1, 5); // Increase confidence if prefetch was issued
+      }
+      // Update confidence based on usefulness
+      if (useful_prefetch && prefetch_issued) {
+        it->second.confidence = std::min(it->second.confidence + 2, 5); // Increase confidence more aggressively if useful
+      } else if (!useful_prefetch) {
+        it->second.confidence = std::max(it->second.confidence - 2, 0); // Decrease confidence more aggressively if not useful
+      }
+    } else {
+      // Track secondary stride
+      if (stride != it->second.primary_stride) {
+        it->second.secondary_stride = it->second.primary_stride;
+        it->second.primary_stride = stride;
+        it->second.confidence = 1; // Reset confidence on stride change
+      }
     }
+    it->second.last_block = current_block;
+  } else {
+    stride_table[ip_val] = StrideEntry{current_block, 0, 1};
   }
+
+  if (type != access_type::LOAD || cache_hit || it->second.confidence < 4) // Increase confidence threshold for prefetching
+    return metadata_in;
+
 
   return metadata_in;
 }
@@ -137,6 +82,17 @@ uint32_t openevolve_prefetcher::prefetcher_cache_fill(champsim::address addr, lo
   return metadata_in;
 }
 
-void openevolve_prefetcher::prefetcher_cycle_operate() {}
+void openevolve_prefetcher::prefetcher_cycle_operate() {
+  // Adaptive decay based on recent prefetch usefulness
+  static int cycle_count = 0;
+  cycle_count++;
+  if (cycle_count % 1000 == 0) { // Decay confidence every 1000 cycles
+    for (auto& entry : stride_table) {
+      if (entry.second.confidence > 0) {
+        entry.second.confidence = std::max(entry.second.confidence - 1, 0); // Periodic decay
+      }
+    }
+  }
+}
 
 // EVOLVE-BLOCK-END
