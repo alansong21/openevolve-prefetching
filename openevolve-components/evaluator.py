@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import time
+import concurrent.futures
 from pathlib import Path
 from typing import Tuple
 import select
@@ -18,7 +19,26 @@ CHAMPSIM_ROOT = REPO_ROOT / "ChampSim"
 PREFETCHER_CC = Path(__file__).with_name("initial_program.cc")
 PREFETCHER_OBJ_DIR = CHAMPSIM_ROOT / ".csconfig" / "modules" / "prefetcher" / "openevolve_prefetcher"
 CONFIG_PATH = Path(__file__).with_name("champsim_config.json").resolve()
+# Default trace path (for backward compatibility)
 TRACE_PATH = Path(os.environ.get("CHAMPSIM_TRACE", REPO_ROOT / "400.perlbench-41B.champsimtrace.xz")).expanduser()
+
+# Manual definition of traces to evaluate
+# You can add your traces here
+TRACES = [
+    # Example: Add paths to your trace files
+    TRACE_PATH,
+    TRACE_PATH,
+    TRACE_PATH,
+    TRACE_PATH
+    # REPO_ROOT / "traces" / "trace1.champsimtrace.xz",
+    # REPO_ROOT / "traces" / "trace2.champsimtrace.xz",
+]
+
+# Environment variable can override the manual list if specified
+if "CHAMPSIM_TRACES" in os.environ:
+    env_traces = [Path(t).expanduser() for t in os.environ["CHAMPSIM_TRACES"].split(":") if t]
+    if env_traces:
+        TRACES = env_traces
 CHAMPSIM_BIN = CHAMPSIM_ROOT / "bin" / "champsim"
 
 SIM_INSTRUCTIONS = int(os.environ.get("CHAMPSIM_SIM_INSTR", 50_000_000))
@@ -164,9 +184,20 @@ def _build_champsim() -> Tuple[str, float]:
     return _execute_with_stream(cmd, cwd=CHAMPSIM_ROOT, timeout=BUILD_TIMEOUT, label="ChampSim build")
 
 
-def _run_champsim() -> Tuple[str, float]:
+def _run_champsim(trace: Path) -> Tuple[str, float, Path]:
+    """Run ChampSim with the specified trace file.
+    
+    Args:
+        trace: Path to the trace file to use for simulation
+        
+    Returns:
+        Tuple of (stdout output, execution time in seconds, trace path)
+    """
     if not CHAMPSIM_BIN.exists():
         raise FileNotFoundError("ChampSim binary missing. Did the build succeed?")
+    
+    if not trace.exists():
+        raise FileNotFoundError(f"Trace file not found at {trace}")
 
     cmd = [
         str(CHAMPSIM_BIN),
@@ -174,9 +205,12 @@ def _run_champsim() -> Tuple[str, float]:
         str(WARMUP_INSTRUCTIONS),
         "--simulation-instructions",
         str(SIM_INSTRUCTIONS),
-        str(TRACE_PATH),
+        str(trace),
     ]
-    return _execute_with_stream(cmd, cwd=CHAMPSIM_ROOT, timeout=SIM_TIMEOUT, label="ChampSim run")
+    # Use trace name in the label for better identification in logs
+    label = f"ChampSim run ({trace.name})"
+    stdout, exec_time = _execute_with_stream(cmd, cwd=CHAMPSIM_ROOT, timeout=SIM_TIMEOUT, label=label)
+    return stdout, exec_time, trace
 
 
 def _failure_result(message: str, **artifacts) -> EvaluationResult:
@@ -215,41 +249,102 @@ def evaluate(program_path: str) -> EvaluationResult:
     except subprocess.TimeoutExpired as exc:
         return _failure_result(f"ChampSim build timed out after {exc.timeout} seconds")
 
+    # Calculate maximum parallel processes to avoid overloading the system
+    max_workers = max(1, os.cpu_count() or 1 - 5)
+    max_workers = min(max_workers, len(TRACES))
+    print(f"Running ChampSim in parallel for {len(TRACES)} traces using {max_workers} workers")
+    
+    # Results storage
+    all_ipcs = []
+    all_sim_times = []
+    all_stdouts = []
+    all_traces = []
+    
     try:
-        sim_stdout, sim_time = _run_champsim()
-        ipc = _parse_ipc(sim_stdout)
-        _print_console_log("ChampSim run", sim_stdout)
-    except subprocess.CalledProcessError as exc:
-        _print_console_log("ChampSim run (failed)", exc.stdout or "")
-        return _failure_result(
-            f"ChampSim run failed with exit code {exc.returncode}",
-            build_log=_trim_log(build_stdout),
-            run_log=exc.stdout or "",
-        )
-    except subprocess.TimeoutExpired as exc:
-        _print_console_log("ChampSim run (timeout)", "")
-        return _failure_result(
-            f"ChampSim run timed out after {exc.timeout} seconds",
-            build_log=_trim_log(build_stdout),
-        )
+        # Run simulations in parallel using a thread pool
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks to the executor
+            future_to_trace = {
+                executor.submit(_run_champsim, trace): trace for trace in TRACES
+            }
+            
+            # Process results as they complete
+            for future in concurrent.futures.as_completed(future_to_trace):
+                trace = future_to_trace[future]
+                try:
+                    sim_stdout, sim_time, trace_path = future.result()
+                    ipc = _parse_ipc(sim_stdout)
+                    _print_console_log(f"ChampSim run ({trace_path.name})", sim_stdout)
+                    
+                    all_ipcs.append(ipc)
+                    all_sim_times.append(sim_time)
+                    all_stdouts.append(sim_stdout)
+                    all_traces.append(trace_path.name)
+                except Exception as exc:
+                    _print_console_log(f"ChampSim run ({trace.name}) failed", str(exc))
+                    # Don't fail the entire evaluation if one trace fails
+                    # Just log the error and continue with other traces
+                    all_ipcs.append(0.0)  # Zero IPC for failed traces
+                    all_sim_times.append(0.0)
+                    all_stdouts.append(f"ERROR: {str(exc)}")
+                    all_traces.append(trace.name)
+        
+        # If all traces failed, return failure
+        if not all_ipcs or all(ipc == 0.0 for ipc in all_ipcs):
+            return _failure_result(
+                f"All ChampSim runs failed",
+                build_log=_trim_log(build_stdout),
+                run_log="\n".join(all_stdouts),
+            )
+            
     except Exception as exc:  # pylint: disable=broad-except
-        _print_console_log("ChampSim run (error)", locals().get("sim_stdout", ""))
         return _failure_result(
-            f"ChampSim run could not be scored: {exc}",
+            f"ChampSim parallel run failed: {exc}",
             build_log=_trim_log(build_stdout),
-            run_log=_trim_log(sim_stdout if 'sim_stdout' in locals() else ""),
+            run_log="\n".join(all_stdouts) if all_stdouts else "",
         )
 
+    # Identify successful runs
+    successful_ipcs = [ipc for ipc in all_ipcs if ipc > 0]
+    
+    # If any trace run failed, set overall IPC to 0
+    if any(ipc == 0.0 for ipc in all_ipcs) or len(all_ipcs) != len(TRACES):
+        avg_ipc = 0.0
+    else:
+        # Calculate average IPC only if all trace runs were successful
+        avg_ipc = sum(all_ipcs) / len(all_ipcs) if all_ipcs else 0.0
+    
+    # Use the maximum simulation time as the overall simulation time
+    sim_time = max(all_sim_times) if all_sim_times else 0.0
+    
     total_time = time.time() - start
+    
+    # Create detailed artifacts for each trace
+    trace_results = {}
+    for i, trace_name in enumerate(all_traces):
+        trace_results[f"trace_{i+1}_name"] = trace_name
+        trace_results[f"trace_{i+1}_ipc"] = all_ipcs[i]
+        trace_results[f"trace_{i+1}_log"] = _trim_log(all_stdouts[i])
+    
     artifacts = {
         "build_log": _trim_log(build_stdout),
-        "run_log": _trim_log(sim_stdout),
+        "num_traces": len(TRACES),
+        "successful_traces": len(successful_ipcs),
+        "trace_results": trace_results
     }
+    
     metrics = {
-        "ipc": ipc,
-        "combined_score": ipc,
+        "ipc": avg_ipc,  # Average IPC across all traces, or 0 if any trace fails
+        "combined_score": avg_ipc,  # Same as IPC for now
         "build_time_s": build_time,
         "sim_time_s": sim_time,
         "wall_time_s": total_time,
+        "traces_evaluated": len(TRACES),
+        "successful_traces": len([ipc for ipc in all_ipcs if ipc > 0]),
     }
+    
+    # Add individual trace IPCs to metrics
+    for i, ipc in enumerate(all_ipcs):
+        metrics[f"trace_{i+1}_ipc"] = ipc
+    
     return EvaluationResult(metrics=metrics, artifacts=artifacts)
