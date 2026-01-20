@@ -1,6 +1,6 @@
 [submodule "openevolve"]
 	path = openevolve
-	url = https://github.com/codelion/openevolve.git
+	url = https://github.com/alansong21/openevolve.git
 [submodule "ChampSim"]
 	path = ChampSim
 	url = https://github.com/CMU-SAFARI/ChampSim.git
