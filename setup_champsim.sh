@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 sudo apt-get update
-sudo apt-get install -y pkg-config build-essential cmake ninja-build curl git unzip tar zip xz-utils
+sudo apt-get install -y pkg-config build-essential cmake ninja-build curl git unzip tar zip xz-utils python3.10-venv
 
 set -euo pipefail
 
@@ -12,13 +12,21 @@ OPENEVOLVE_CONFIG="$SCRIPT_DIR/openevolve-components/champsim_config.json"
 OPENEVOLVE_SOURCE_DIR="$SCRIPT_DIR/openevolve-components"
 OPENEVOLVE_TARGET_DIR="$SCRIPT_DIR/ChampSim/prefetcher/openevolve_prefetcher"
 
-TRACE_URL="https://dpc3.compas.cs.stonybrook.edu/champsim-traces/speccpu/400.perlbench-41B.champsimtrace.xz"
-TRACE_FILE="400.perlbench-41B.champsimtrace.xz"
+TRACE_BASE_URL="https://dpc3.compas.cs.stonybrook.edu/champsim-traces/speccpu"
+TRACE_FILES=(
+  "400.perlbench-41B.champsimtrace.xz"
+  "403.gcc-48B.champsimtrace.xz"
+  "429.mcf-51B.champsimtrace.xz"
+)
 
-echo "Downloading trace: $TRACE_FILE"
-if [[ -f "$TRACE_FILE" ]]; then
-  echo "Trace already exists at $TRACE_FILE; skipping download."
-else
+for TRACE_FILE in "${TRACE_FILES[@]}"; do
+  TRACE_URL="$TRACE_BASE_URL/$TRACE_FILE"
+  echo "Downloading trace: $TRACE_FILE"
+  if [[ -f "$TRACE_FILE" ]]; then
+    echo "Trace already exists at $TRACE_FILE; skipping download."
+    continue
+  fi
+
   if command -v curl >/dev/null 2>&1; then
     curl --fail --location --retry 3 --output "$TRACE_FILE" "$TRACE_URL"
   elif command -v wget >/dev/null 2>&1; then
@@ -27,7 +35,7 @@ else
     echo "Error: neither curl nor wget is available to download the trace." >&2
     exit 1
   fi
-fi
+done
 
 cd ChampSim
 
