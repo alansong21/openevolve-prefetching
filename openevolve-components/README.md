@@ -2,7 +2,7 @@
 
 This example wires OpenEvolve into the ChampSim simulator so that each evolution
 step edits a C++ prefetcher (`initial_program.cc`). The evaluator keeps the source
-outside both submodules, rebuilds ChampSim, runs a trace, and ranks the program
+outside both submodules, rebuilds ChampSim, runs the configured traces, and ranks the program
 by the resulting IPC.
 
 ## Prerequisites
@@ -30,9 +30,9 @@ by the resulting IPC.
    export OPENAI_API_KEY=sk-...
    ```
 
-3. (Optional) Override defaults via environment variables:
+3. (Optional) Customize evaluation settings:
 
-   * `CHAMPSIM_TRACE` – absolute path to a `.champsimtrace*.xz` file.
+   * Edit `TRACES` in `openevolve-components/evaluator.py` to change the trace list.
    * `CHAMPSIM_JOBS` – `make -j` fan-out when rebuilding.
    * `CHAMPSIM_SIM_INSTR` / `CHAMPSIM_WARMUP_INSTR` – instruction counts passed
      to the binary.
@@ -58,7 +58,7 @@ Each iteration performs the following:
 2. The evaluator overwrites `openevolve-components/initial_program.cc` (the file
    that ChampSim includes via the thin module shim).
 3. `make -C ChampSim` rebuilds the binary (incremental after the first build).
-4. ChampSim runs the configured trace and prints per-core IPC.
+4. ChampSim runs the configured traces and prints per-core IPC.
 5. The evaluator extracts the final `cumulative IPC` and returns it as
    `combined_score` for the MAP-Elites loop.
 

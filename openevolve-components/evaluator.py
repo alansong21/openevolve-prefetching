@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import time
 import concurrent.futures
+import uuid
 from pathlib import Path
 from typing import Tuple
 import select
@@ -19,26 +20,13 @@ CHAMPSIM_ROOT = REPO_ROOT / "ChampSim"
 PREFETCHER_CC = Path(__file__).with_name("initial_program.cc")
 PREFETCHER_OBJ_DIR = CHAMPSIM_ROOT / ".csconfig" / "modules" / "prefetcher" / "openevolve_prefetcher"
 CONFIG_PATH = Path(__file__).with_name("champsim_config.json").resolve()
-# Default trace path (for backward compatibility)
-TRACE_PATH = Path(os.environ.get("CHAMPSIM_TRACE", REPO_ROOT / "400.perlbench-41B.champsimtrace.xz")).expanduser()
-
 # Manual definition of traces to evaluate
 # You can add your traces here
 TRACES = [
-    # Example: Add paths to your trace files
-    TRACE_PATH,
-    TRACE_PATH,
-    TRACE_PATH,
-    TRACE_PATH
-    # REPO_ROOT / "traces" / "trace1.champsimtrace.xz",
-    # REPO_ROOT / "traces" / "trace2.champsimtrace.xz",
+    # Default to the single included trace in the repo
+    REPO_ROOT / "400.perlbench-41B.champsimtrace.xz",
 ]
 
-# Environment variable can override the manual list if specified
-if "CHAMPSIM_TRACES" in os.environ:
-    env_traces = [Path(t).expanduser() for t in os.environ["CHAMPSIM_TRACES"].split(":") if t]
-    if env_traces:
-        TRACES = env_traces
 CHAMPSIM_BIN = CHAMPSIM_ROOT / "bin" / "champsim"
 
 SIM_INSTRUCTIONS = int(os.environ.get("CHAMPSIM_SIM_INSTR", 50_000_000))
@@ -49,6 +37,12 @@ MAKE_JOBS = int(os.environ.get("CHAMPSIM_JOBS", max(1, os.cpu_count() or 1)))
 IPC_PATTERN = re.compile(r"cumulative IPC:\s+([0-9.]+)")
 STREAM_LOGS = os.environ.get("CHAMPSIM_STREAM_LOGS", "true").lower() in ("1", "true", "yes", "on")
 CONSOLE_LOG_LIMIT = int(os.environ.get("CHAMPSIM_CONSOLE_LOG_LIMIT", 4000))
+HEARTBEAT_INTERVAL = int(os.environ.get("CHAMPSIM_HEARTBEAT_INTERVAL", 30))
+RUN_ID = os.environ.get("OPENEVOLVE_RUN_ID", "").strip()
+if RUN_ID:
+    EVAL_LOG_ROOT = Path(__file__).with_name("openevolve_output") / "runs" / RUN_ID / "champsim"
+else:
+    EVAL_LOG_ROOT = Path(__file__).with_name("openevolve_output") / "logs" / "champsim"
 
 
 def _trim_log(payload: str, limit: int = 20000) -> str:
@@ -72,8 +66,16 @@ def _print_live_line(label: str, line: str) -> None:
     print(f"[{label}] {line.rstrip()}")
 
 
-def _execute_with_stream(cmd, *, cwd: Path, timeout: int, label: str) -> Tuple[str, float]:
+def _execute_with_stream(
+    cmd,
+    *,
+    cwd: Path,
+    timeout: int,
+    label: str,
+    log_path: Path | None = None,
+) -> Tuple[str, float]:
     start = time.time()
+    last_output_time = start
     process = subprocess.Popen(
         cmd,
         cwd=str(cwd),
@@ -90,6 +92,11 @@ def _execute_with_stream(cmd, *, cwd: Path, timeout: int, label: str) -> Tuple[s
 
     deadline = start + timeout
     chunks: list[str] = []
+    log_file = None
+
+    if log_path is not None:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_file = log_path.open("a", encoding="utf-8")
 
     try:
         while True:
@@ -100,14 +107,26 @@ def _execute_with_stream(cmd, *, cwd: Path, timeout: int, label: str) -> Tuple[s
             if remaining <= 0:
                 raise subprocess.TimeoutExpired(cmd, timeout)
 
-            ready, _, _ = select.select([process.stdout], [], [], remaining)
+            ready, _, _ = select.select([process.stdout], [], [], min(remaining, 1.0))
             if ready:
                 chunk = process.stdout.readline()
                 if not chunk:
                     continue
                 chunks.append(chunk)
+                if log_file is not None:
+                    log_file.write(chunk)
+                    log_file.flush()
                 _print_live_line(label, chunk)
+                last_output_time = time.time()
             else:
+                if HEARTBEAT_INTERVAL > 0 and log_file is not None:
+                    now = time.time()
+                    if now - last_output_time >= HEARTBEAT_INTERVAL:
+                        elapsed = int(now - start)
+                        heartbeat = f"[{label}] heartbeat: {elapsed}s elapsed\n"
+                        log_file.write(heartbeat)
+                        log_file.flush()
+                        last_output_time = now
                 continue
 
         process.wait(timeout=max(0.0, deadline - time.time()))
@@ -115,12 +134,23 @@ def _execute_with_stream(cmd, *, cwd: Path, timeout: int, label: str) -> Tuple[s
         process.kill()
         process.wait()
         raise exc
+    finally:
+        if log_file is not None:
+            log_file.close()
 
     output = "".join(chunks)
     if process.returncode:
         raise subprocess.CalledProcessError(process.returncode, cmd, output)
 
     return output, time.time() - start
+
+
+def _append_log(log_path: Path | None, payload: str) -> None:
+    if log_path is None:
+        return
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write(payload)
 
 
 def _ensure_configuration() -> None:
@@ -138,9 +168,11 @@ def _ensure_configuration() -> None:
 def _ensure_prerequisites() -> None:
     if not CHAMPSIM_ROOT.exists():
         raise FileNotFoundError(f"ChampSim root not found at {CHAMPSIM_ROOT}")
-    if not TRACE_PATH.exists():
+    missing_traces = [trace for trace in TRACES if not trace.exists()]
+    if missing_traces:
+        missing_list = ", ".join(str(trace) for trace in missing_traces)
         raise FileNotFoundError(
-            f"Trace file not found at {TRACE_PATH}. Update CHAMPSIM_TRACE or run setup_champsim.sh"
+            f"Trace file(s) not found at {missing_list}. Update TRACES in evaluator.py or run setup_champsim.sh"
         )
     if not PREFETCHER_CC.exists():
         raise FileNotFoundError(f"Prefetcher source missing: {PREFETCHER_CC}")
@@ -184,7 +216,7 @@ def _build_champsim() -> Tuple[str, float]:
     return _execute_with_stream(cmd, cwd=CHAMPSIM_ROOT, timeout=BUILD_TIMEOUT, label="ChampSim build")
 
 
-def _run_champsim(trace: Path) -> Tuple[str, float, Path]:
+def _run_champsim(trace: Path, log_path: Path | None) -> Tuple[str, float, Path, Path | None]:
     """Run ChampSim with the specified trace file.
     
     Args:
@@ -209,8 +241,15 @@ def _run_champsim(trace: Path) -> Tuple[str, float, Path]:
     ]
     # Use trace name in the label for better identification in logs
     label = f"ChampSim run ({trace.name})"
-    stdout, exec_time = _execute_with_stream(cmd, cwd=CHAMPSIM_ROOT, timeout=SIM_TIMEOUT, label=label)
-    return stdout, exec_time, trace
+    _append_log(log_path, f"[{label}] starting\n")
+    stdout, exec_time = _execute_with_stream(
+        cmd,
+        cwd=CHAMPSIM_ROOT,
+        timeout=SIM_TIMEOUT,
+        label=label,
+        log_path=log_path,
+    )
+    return stdout, exec_time, trace, log_path
 
 
 def _failure_result(message: str, **artifacts) -> EvaluationResult:
@@ -227,8 +266,13 @@ def evaluate(program_path: str) -> EvaluationResult:
 
     start = time.time()
     program_path = Path(program_path)
+    run_id = time.strftime("%Y%m%d_%H%M%S") + f"_{uuid.uuid4().hex[:8]}"
+    run_log_dir = EVAL_LOG_ROOT / run_id
+    trace_log_paths = [run_log_dir / f"{trace.name}.log" for trace in TRACES]
 
     try:
+        if not TRACES:
+            return _failure_result("No traces configured. Update TRACES in evaluator.py")
         _ensure_prerequisites()
         _ensure_configuration()
         _copy_candidate(program_path)
@@ -236,17 +280,75 @@ def evaluate(program_path: str) -> EvaluationResult:
     except Exception as exc:  # pylint: disable=broad-except
         return _failure_result(f"Setup failed: {exc}")
 
+    candidate_source = ""
+    built_source = ""
+    try:
+        candidate_source = program_path.read_text(encoding="utf-8", errors="replace")
+        built_source = PREFETCHER_CC.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
     try:
         build_stdout, build_time = _build_champsim()
         _print_console_log("ChampSim build", build_stdout)
+        for log_path in trace_log_paths:
+            _append_log(log_path, "[ChampSim build] success\n")
+            _append_log(log_path, _trim_log(build_stdout) + "\n")
+            if candidate_source:
+                candidate_path = log_path.with_name(f"{log_path.stem}.candidate.cc")
+                candidate_path.write_text(candidate_source, encoding="utf-8")
+                _append_log(
+                    log_path,
+                    f"[Program source] candidate={candidate_path.name}\n",
+                )
+            if built_source:
+                built_path = log_path.with_name(f"{log_path.stem}.built.cc")
+                built_path.write_text(built_source, encoding="utf-8")
+                _append_log(
+                    log_path,
+                    f"[Program source] built={built_path.name}\n",
+                )
     except subprocess.CalledProcessError as exc:
         combined_stdout = exc.stdout or ""
         _print_console_log("ChampSim build (failed)", combined_stdout)
+        for log_path in trace_log_paths:
+            _append_log(log_path, "[ChampSim build] failed\n")
+            _append_log(log_path, _trim_log(combined_stdout) + "\n")
+            if candidate_source:
+                candidate_path = log_path.with_name(f"{log_path.stem}.candidate.cc")
+                candidate_path.write_text(candidate_source, encoding="utf-8")
+                _append_log(
+                    log_path,
+                    f"[Program source] candidate={candidate_path.name}\n",
+                )
+            if built_source:
+                built_path = log_path.with_name(f"{log_path.stem}.built.cc")
+                built_path.write_text(built_source, encoding="utf-8")
+                _append_log(
+                    log_path,
+                    f"[Program source] built={built_path.name}\n",
+                )
         return _failure_result(
             f"ChampSim build failed with exit code {exc.returncode}",
             build_log=combined_stdout,
         )
     except subprocess.TimeoutExpired as exc:
+        for log_path in trace_log_paths:
+            _append_log(log_path, f"[ChampSim build] timed out after {exc.timeout} seconds\n")
+            if candidate_source:
+                candidate_path = log_path.with_name(f"{log_path.stem}.candidate.cc")
+                candidate_path.write_text(candidate_source, encoding="utf-8")
+                _append_log(
+                    log_path,
+                    f"[Program source] candidate={candidate_path.name}\n",
+                )
+            if built_source:
+                built_path = log_path.with_name(f"{log_path.stem}.built.cc")
+                built_path.write_text(built_source, encoding="utf-8")
+                _append_log(
+                    log_path,
+                    f"[Program source] built={built_path.name}\n",
+                )
         return _failure_result(f"ChampSim build timed out after {exc.timeout} seconds")
 
     # Calculate maximum parallel processes to avoid overloading the system
@@ -259,27 +361,39 @@ def evaluate(program_path: str) -> EvaluationResult:
     all_sim_times = []
     all_stdouts = []
     all_traces = []
+    all_log_paths = []
+    all_heartbeat_logs = []
     
     try:
         # Run simulations in parallel using a thread pool
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit all tasks to the executor
             future_to_trace = {
-                executor.submit(_run_champsim, trace): trace for trace in TRACES
+                executor.submit(
+                    _run_champsim,
+                    trace,
+                    run_log_dir / f"{trace.name}.log",
+                ): (trace, run_log_dir / f"{trace.name}.log")
+                for trace in TRACES
             }
             
             # Process results as they complete
             for future in concurrent.futures.as_completed(future_to_trace):
-                trace = future_to_trace[future]
+                trace, log_path = future_to_trace[future]
                 try:
-                    sim_stdout, sim_time, trace_path = future.result()
+                    sim_stdout, sim_time, trace_path, trace_log_path = future.result()
                     ipc = _parse_ipc(sim_stdout)
                     _print_console_log(f"ChampSim run ({trace_path.name})", sim_stdout)
+                    heartbeat_log = ""
+                    if trace_log_path and trace_log_path.exists():
+                        heartbeat_log = trace_log_path.read_text(encoding="utf-8", errors="replace")
                     
                     all_ipcs.append(ipc)
                     all_sim_times.append(sim_time)
                     all_stdouts.append(sim_stdout)
                     all_traces.append(trace_path.name)
+                    all_log_paths.append(str(trace_log_path) if trace_log_path else "")
+                    all_heartbeat_logs.append(heartbeat_log)
                 except Exception as exc:
                     _print_console_log(f"ChampSim run ({trace.name}) failed", str(exc))
                     # Don't fail the entire evaluation if one trace fails
@@ -288,6 +402,14 @@ def evaluate(program_path: str) -> EvaluationResult:
                     all_sim_times.append(0.0)
                     all_stdouts.append(f"ERROR: {str(exc)}")
                     all_traces.append(trace.name)
+                    if log_path and log_path.exists():
+                        all_log_paths.append(str(log_path))
+                        all_heartbeat_logs.append(
+                            log_path.read_text(encoding="utf-8", errors="replace")
+                        )
+                    else:
+                        all_log_paths.append("")
+                        all_heartbeat_logs.append("")
         
         # If all traces failed, return failure
         if not all_ipcs or all(ipc == 0.0 for ipc in all_ipcs):
@@ -325,6 +447,8 @@ def evaluate(program_path: str) -> EvaluationResult:
         trace_results[f"trace_{i+1}_name"] = trace_name
         trace_results[f"trace_{i+1}_ipc"] = all_ipcs[i]
         trace_results[f"trace_{i+1}_log"] = _trim_log(all_stdouts[i])
+        trace_results[f"trace_{i+1}_log_path"] = all_log_paths[i]
+        trace_results[f"trace_{i+1}_heartbeat_log"] = _trim_log(all_heartbeat_logs[i])
     
     artifacts = {
         "build_log": _trim_log(build_stdout),
@@ -346,5 +470,21 @@ def evaluate(program_path: str) -> EvaluationResult:
     # Add individual trace IPCs to metrics
     for i, ipc in enumerate(all_ipcs):
         metrics[f"trace_{i+1}_ipc"] = ipc
-    
+
+    summary_lines = [
+        "[ChampSim summary]",
+        f"ipc={avg_ipc}",
+        f"build_time_s={build_time}",
+        f"sim_time_s={sim_time}",
+        f"wall_time_s={total_time}",
+        f"traces_evaluated={len(TRACES)}",
+        f"successful_traces={len([ipc for ipc in all_ipcs if ipc > 0])}",
+    ]
+    for i, trace_name in enumerate(all_traces):
+        summary_lines.append(f"trace_{i+1}_name={trace_name}")
+        summary_lines.append(f"trace_{i+1}_ipc={all_ipcs[i]}")
+    summary_payload = "\n".join(summary_lines) + "\n"
+    for log_path in trace_log_paths:
+        _append_log(log_path, summary_payload)
+
     return EvaluationResult(metrics=metrics, artifacts=artifacts)

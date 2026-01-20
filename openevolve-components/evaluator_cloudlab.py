@@ -25,26 +25,12 @@ CHAMPSIM_ROOT = REPO_ROOT / "ChampSim"
 PREFETCHER_CC = Path(__file__).with_name("initial_program.cc")
 PREFETCHER_OBJ_DIR = CHAMPSIM_ROOT / ".csconfig" / "modules" / "prefetcher" / "openevolve_prefetcher"
 CONFIG_PATH = Path(__file__).with_name("champsim_config.json").resolve()
-# Default trace path (for backward compatibility)
-TRACE_PATH = Path(os.environ.get("CHAMPSIM_TRACE", REPO_ROOT / "400.perlbench-41B.champsimtrace.xz")).expanduser()
-
 # Manual definition of traces to evaluate
 # You can add your traces here
 TRACES = [
-    # Example: Add paths to your trace files
-    TRACE_PATH,
-    TRACE_PATH,
-    TRACE_PATH,
-    TRACE_PATH
-    # REPO_ROOT / "traces" / "trace1.champsimtrace.xz",
-    # REPO_ROOT / "traces" / "trace2.champsimtrace.xz",
+    # Default to the single included trace in the repo
+    REPO_ROOT / "400.perlbench-41B.champsimtrace.xz",
 ]
-
-# Environment variable can override the manual list if specified
-if "CHAMPSIM_TRACES" in os.environ:
-    env_traces = [Path(t).expanduser() for t in os.environ["CHAMPSIM_TRACES"].split(":") if t]
-    if env_traces:
-        TRACES = env_traces
 
 CHAMPSIM_BIN = CHAMPSIM_ROOT / "bin" / "champsim"
 
@@ -262,6 +248,8 @@ def evaluate(program_path: str) -> EvaluationResult:
     program_path = Path(program_path)
 
     print("Starting evaluation...")
+    if not TRACES:
+        return _failure_result("No traces configured. Update TRACES in evaluator_cloudlab.py")
     # Initialize CloudLab agent
     if not CLOUDLAB_CONFIG.exists():
         print(f"CloudLab config file not found at {CLOUDLAB_CONFIG}")
@@ -552,4 +540,3 @@ def evaluate(program_path: str) -> EvaluationResult:
         metrics[f"trace_{i+1}_ipc"] = ipc
     
     return EvaluationResult(metrics=metrics, artifacts=artifacts)
-
