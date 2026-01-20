@@ -43,11 +43,11 @@ This repository wires OpenEvolve into the ChampSim simulator so evolution edits 
     --config openevolve-components/config.yaml \
     --iterations 5
   ```
-- Each iteration overwrites `openevolve-components/initial_program.cc`, rebuilds `ChampSim`, runs the configured trace, and reports IPC as the score. Logs and artifacts land under `openevolve-components/openevolve_output/`.
+- Each iteration overwrites `openevolve-components/initial_program.cc`, rebuilds `ChampSim`, runs the configured traces, and reports IPC as the score. Logs and artifacts land under `openevolve-components/openevolve_output/`.
 
 ## Useful notes
 - The ChampSim module `ChampSim/prefetcher/openevolve_prefetcher` is a two-line shim that includes the shared sources under `openevolve-components/`, keeping the submodule clean.
-- Swap the trace by setting `CHAMPSIM_TRACE` to an absolute path to a `.champsimtrace*.xz`. Other knobs (jobs, timeouts, instruction counts) are documented in `openevolve-components/README.md`.
+- Update the trace list by editing `TRACES` in `openevolve-components/evaluator.py`. Other knobs (jobs, timeouts, instruction counts) are documented in `openevolve-components/README.md`.
 - Ready-to-run Bingo, IPCP, and MLOP wrappers live under `prefetchers/{bingo,ipcp,mlop}/` with scripts in `scripts/` for copying them into the ChampSim submodule.
 - Quick API sanity check:
   ```bash
