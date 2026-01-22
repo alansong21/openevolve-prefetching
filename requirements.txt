@@ -8,8 +8,8 @@ httpcore==1.0.9
 httpx==0.28.1
 idna==3.11
 jiter==0.12.0
-langchain==0.3.14
-langchain_openai==0.2.6
+langchain==1.2.6
+langchain_openai==1.1.7
 numpy==2.2.6
 openai==2.13.0
 pydantic==2.12.5
