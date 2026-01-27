@@ -6,13 +6,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 iterations=5
+initial_src=""
 
 usage() {
   cat <<'EOF'
-Usage: scripts/run_openevolve.sh [--iterations N]
+Usage: scripts/run_openevolve.sh [--iterations N] [--initial-program PATH|ipcp]
 
 Options:
   -i, --iterations N  Number of iterations to run (default: 5)
+  -p, --initial-program PATH|ipcp  Initial prefetcher program to copy in (default: next_line.cc)
   -h, --help          Show this help message
 EOF
 }
@@ -21,6 +23,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     -i|--iterations)
       iterations="${2:-}"
+      shift 2
+      ;;
+    -p|--initial-program)
+      initial_src="${2:-}"
       shift 2
       ;;
     -h|--help)
@@ -47,6 +53,7 @@ fi
 
 components_dir="${REPO_ROOT}/openevolve-components"
 next_line_src="${components_dir}/next_line.cc"
+ipcp_src="${components_dir}/ipcp_l2c.cc"
 initial_program="${components_dir}/initial_program.cc"
 run_id="$(date +%Y%m%d_%H%M%S)_$(python - <<'PY'
 import uuid
@@ -59,7 +66,20 @@ if [[ ! -f "${next_line_src}" ]]; then
   exit 1
 fi
 
-cp "${next_line_src}" "${initial_program}"
+if [[ -z "${initial_src}" ]]; then
+  initial_src="${next_line_src}"
+fi
+
+if [[ "${initial_src}" == "ipcp" ]]; then
+  initial_src="${ipcp_src}"
+fi
+
+if [[ ! -f "${initial_src}" ]]; then
+  echo "Error: initial program not found: ${initial_src}" >&2
+  exit 1
+fi
+
+cp "${initial_src}" "${initial_program}"
 
 export OPENEVOLVE_RUN_ID="${run_id}"
 echo "Run ID: ${OPENEVOLVE_RUN_ID}"
