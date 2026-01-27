@@ -3,6 +3,7 @@ checkpoint_interval: 1
 log_level: "DEBUG"
 language: cpp
 file_suffix: ".cc"
+max_code_length: 150000
 
 evaluator:
   timeout: 1800          # ChampSim runs are long; give the process time to finish
@@ -21,7 +22,7 @@ llm:
   retries: 5
   retry_delay: 5
   temperature: 0.4
-  max_tokens: 10000
+  max_tokens: 15000
   timeout: 120
 
 prompt:
@@ -71,25 +72,12 @@ prompt:
     - Code must compile and run end-to-end.
     - No crashes, hangs, or undefined behavior.
     - No out-of-bounds accesses.
-    - No file I/O, no logging, no randomness, no exceptions.
+    - No file I/O, no logging, no exceptions.
 
     API discipline:
     - Do NOT assume function signatures, helper utilities, or types.
     - Only use APIs, types, and constants explicitly provided in the appended
       context agent output.
-    - If required context is missing, keep changes minimal and conservative.
-
-    ================================
-    CHANGE SCOPE
-    ================================
-
-    - Each iteration should implement ONE coherent idea.
-      Examples:
-      - Add per-PC stride detection with confidence.
-      - Add adaptive prefetch distance based on accuracy.
-      - Add simple global throttling when usefulness drops.
-    - Avoid combining many unrelated changes in one edit.
-    - Prefer changes that are easy to reason about and debug.
 
     ================================
     STATE AND STORAGE
@@ -137,7 +125,7 @@ database[q]:
   population_size: 12
   archive_size: 6
   num_islands: 1
-  exploration_ratio: 0.3
-  exploitation_ratio: 0.7
+  exploration_ratio: 0.7
+  exploitation_ratio: 0.3
   elite_selection_ratio: 0.1
   log_prompts: true
