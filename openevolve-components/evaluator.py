@@ -29,11 +29,12 @@ TRACES = [
 
 CHAMPSIM_BIN = CHAMPSIM_ROOT / "bin" / "champsim"
 
-SIM_INSTRUCTIONS = int(os.environ.get("CHAMPSIM_SIM_INSTR", 50_000_000))
-WARMUP_INSTRUCTIONS = int(os.environ.get("CHAMPSIM_WARMUP_INSTR", 10_000_000))
+SIM_INSTRUCTIONS = int(os.environ.get("CHAMPSIM_SIM_INSTR", 10_000_000))
+WARMUP_INSTRUCTIONS = int(os.environ.get("CHAMPSIM_WARMUP_INSTR", 1_000_000))
 SIM_TIMEOUT = int(os.environ.get("CHAMPSIM_TIMEOUT", 1200))
 BUILD_TIMEOUT = int(os.environ.get("CHAMPSIM_BUILD_TIMEOUT", 600))
 MAKE_JOBS = int(os.environ.get("CHAMPSIM_JOBS", max(1, os.cpu_count() or 1)))
+TRACE_ITERATIONS = max(1, int(os.environ.get("CHAMPSIM_TRACE_ITERATIONS", 1)))
 IPC_PATTERN = re.compile(r"cumulative IPC:\s+([0-9.]+)")
 STREAM_LOGS = os.environ.get("CHAMPSIM_STREAM_LOGS", "true").lower() in ("1", "true", "yes", "on")
 CONSOLE_LOG_LIMIT = int(os.environ.get("CHAMPSIM_CONSOLE_LOG_LIMIT", 4000))
@@ -216,7 +217,9 @@ def _build_champsim() -> Tuple[str, float]:
     return _execute_with_stream(cmd, cwd=CHAMPSIM_ROOT, timeout=BUILD_TIMEOUT, label="ChampSim build")
 
 
-def _run_champsim(trace: Path, log_path: Path | None) -> Tuple[str, float, Path, Path | None]:
+def _run_champsim(
+    trace: Path, log_path: Path | None, iteration: int | None = None
+) -> Tuple[str, float, Path, Path | None]:
     """Run ChampSim with the specified trace file.
     
     Args:
@@ -240,7 +243,10 @@ def _run_champsim(trace: Path, log_path: Path | None) -> Tuple[str, float, Path,
         str(trace),
     ]
     # Use trace name in the label for better identification in logs
-    label = f"ChampSim run ({trace.name})"
+    if iteration is None:
+        label = f"ChampSim run ({trace.name})"
+    else:
+        label = f"ChampSim run ({trace.name}, iter {iteration})"
     _append_log(log_path, f"[{label}] starting\n")
     stdout, exec_time = _execute_with_stream(
         cmd,
@@ -356,88 +362,91 @@ def evaluate(program_path: str) -> EvaluationResult:
     max_workers = min(max_workers, len(TRACES))
     print(f"Running ChampSim in parallel for {len(TRACES)} traces using {max_workers} workers")
     
-    # Results storage
-    all_ipcs = []
-    all_sim_times = []
-    all_stdouts = []
-    all_traces = []
-    all_log_paths = []
-    all_heartbeat_logs = []
+    trace_runs = {
+        trace.name: {
+            "trace_path": trace,
+            "ipcs": [],
+            "sim_times": [],
+            "stdouts": [],
+            "log_path": str(run_log_dir / f"{trace.name}.log"),
+            "heartbeat_logs": [],
+        }
+        for trace in TRACES
+    }
     
     try:
-        # Run simulations in parallel using a thread pool
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit all tasks to the executor
-            future_to_trace = {
-                executor.submit(
-                    _run_champsim,
-                    trace,
-                    run_log_dir / f"{trace.name}.log",
-                ): (trace, run_log_dir / f"{trace.name}.log")
-                for trace in TRACES
-            }
-            
-            # Process results as they complete
-            for future in concurrent.futures.as_completed(future_to_trace):
-                trace, log_path = future_to_trace[future]
-                try:
+        for iteration in range(1, TRACE_ITERATIONS + 1):
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_trace = {
+                    executor.submit(
+                        _run_champsim,
+                        trace,
+                        run_log_dir / f"{trace.name}.log",
+                        iteration,
+                    ): trace
+                    for trace in TRACES
+                }
+
+                done, pending = concurrent.futures.wait(
+                    future_to_trace, return_when=concurrent.futures.FIRST_EXCEPTION
+                )
+                failure = next((future for future in done if future.exception()), None)
+                if failure is not None:
+                    for future in pending:
+                        future.cancel()
+                    return _failure_result(
+                        f"ChampSim run failed during iteration {iteration}: {failure.exception()}",
+                        build_log=_trim_log(build_stdout),
+                    )
+
+                concurrent.futures.wait(future_to_trace)
+                for future, trace in future_to_trace.items():
                     sim_stdout, sim_time, trace_path, trace_log_path = future.result()
                     ipc = _parse_ipc(sim_stdout)
                     _print_console_log(f"ChampSim run ({trace_path.name})", sim_stdout)
                     heartbeat_log = ""
                     if trace_log_path and trace_log_path.exists():
                         heartbeat_log = trace_log_path.read_text(encoding="utf-8", errors="replace")
-                    
-                    all_ipcs.append(ipc)
-                    all_sim_times.append(sim_time)
-                    all_stdouts.append(sim_stdout)
-                    all_traces.append(trace_path.name)
-                    all_log_paths.append(str(trace_log_path) if trace_log_path else "")
-                    all_heartbeat_logs.append(heartbeat_log)
-                except Exception as exc:
-                    _print_console_log(f"ChampSim run ({trace.name}) failed", str(exc))
-                    # Don't fail the entire evaluation if one trace fails
-                    # Just log the error and continue with other traces
-                    all_ipcs.append(0.0)  # Zero IPC for failed traces
-                    all_sim_times.append(0.0)
-                    all_stdouts.append(f"ERROR: {str(exc)}")
-                    all_traces.append(trace.name)
-                    if log_path and log_path.exists():
-                        all_log_paths.append(str(log_path))
-                        all_heartbeat_logs.append(
-                            log_path.read_text(encoding="utf-8", errors="replace")
-                        )
-                    else:
-                        all_log_paths.append("")
-                        all_heartbeat_logs.append("")
-        
-        # If all traces failed, return failure
-        if not all_ipcs or all(ipc == 0.0 for ipc in all_ipcs):
-            return _failure_result(
-                f"All ChampSim runs failed",
-                build_log=_trim_log(build_stdout),
-                run_log="\n".join(all_stdouts),
-            )
+
+                    run = trace_runs[trace_path.name]
+                    run["ipcs"].append(ipc)
+                    run["sim_times"].append(sim_time)
+                    run["stdouts"].append(sim_stdout)
+                    run["heartbeat_logs"].append(heartbeat_log)
             
     except Exception as exc:  # pylint: disable=broad-except
         return _failure_result(
             f"ChampSim parallel run failed: {exc}",
             build_log=_trim_log(build_stdout),
-            run_log="\n".join(all_stdouts) if all_stdouts else "",
         )
 
-    # Identify successful runs
-    successful_ipcs = [ipc for ipc in all_ipcs if ipc > 0]
-    
-    # If any trace run failed, set overall IPC to 0
-    if any(ipc == 0.0 for ipc in all_ipcs) or len(all_ipcs) != len(TRACES):
-        avg_ipc = 0.0
-    else:
-        # Calculate average IPC only if all trace runs were successful
-        avg_ipc = sum(all_ipcs) / len(all_ipcs) if all_ipcs else 0.0
-    
-    # Use the maximum simulation time as the overall simulation time
-    sim_time = max(all_sim_times) if all_sim_times else 0.0
+    def _join_iteration_logs(chunks: list[str]) -> str:
+        if len(chunks) <= 1:
+            return chunks[0] if chunks else ""
+        return "\n\n".join(
+            f"-- iteration {idx + 1} --\n{chunk}" for idx, chunk in enumerate(chunks)
+        )
+
+    trace_ipcs = []
+    trace_sim_times = []
+    all_traces = []
+    all_stdouts = []
+    all_log_paths = []
+    all_heartbeat_logs = []
+
+    for trace in TRACES:
+        run = trace_runs[trace.name]
+        avg_ipc = sum(run["ipcs"]) / len(run["ipcs"]) if run["ipcs"] else 0.0
+        trace_ipcs.append(avg_ipc)
+        trace_sim_times.append(max(run["sim_times"]) if run["sim_times"] else 0.0)
+        all_traces.append(trace.name)
+        all_stdouts.append(_join_iteration_logs(run["stdouts"]))
+        all_log_paths.append(run["log_path"])
+        all_heartbeat_logs.append(_join_iteration_logs(run["heartbeat_logs"]))
+
+    successful_ipcs = [ipc for ipc in trace_ipcs if ipc > 0]
+    avg_ipc = sum(trace_ipcs) / len(trace_ipcs) if trace_ipcs else 0.0
+    sim_time = max(trace_sim_times) if trace_sim_times else 0.0
     
     total_time = time.time() - start
     
@@ -445,7 +454,7 @@ def evaluate(program_path: str) -> EvaluationResult:
     trace_results = {}
     for i, trace_name in enumerate(all_traces):
         trace_results[f"trace_{i+1}_name"] = trace_name
-        trace_results[f"trace_{i+1}_ipc"] = all_ipcs[i]
+        trace_results[f"trace_{i+1}_ipc"] = trace_ipcs[i]
         trace_results[f"trace_{i+1}_log"] = _trim_log(all_stdouts[i])
         trace_results[f"trace_{i+1}_log_path"] = all_log_paths[i]
         trace_results[f"trace_{i+1}_heartbeat_log"] = _trim_log(all_heartbeat_logs[i])
@@ -454,6 +463,7 @@ def evaluate(program_path: str) -> EvaluationResult:
         "build_log": _trim_log(build_stdout),
         "num_traces": len(TRACES),
         "successful_traces": len(successful_ipcs),
+        "trace_iterations": TRACE_ITERATIONS,
         "trace_results": trace_results
     }
     
@@ -464,11 +474,11 @@ def evaluate(program_path: str) -> EvaluationResult:
         "sim_time_s": sim_time,
         "wall_time_s": total_time,
         "traces_evaluated": len(TRACES),
-        "successful_traces": len([ipc for ipc in all_ipcs if ipc > 0]),
+        "successful_traces": len(successful_ipcs),
     }
     
     # Add individual trace IPCs to metrics
-    for i, ipc in enumerate(all_ipcs):
+    for i, ipc in enumerate(trace_ipcs):
         metrics[f"trace_{i+1}_ipc"] = ipc
 
     summary_lines = [
@@ -478,11 +488,11 @@ def evaluate(program_path: str) -> EvaluationResult:
         f"sim_time_s={sim_time}",
         f"wall_time_s={total_time}",
         f"traces_evaluated={len(TRACES)}",
-        f"successful_traces={len([ipc for ipc in all_ipcs if ipc > 0])}",
+        f"successful_traces={len(successful_ipcs)}",
     ]
     for i, trace_name in enumerate(all_traces):
         summary_lines.append(f"trace_{i+1}_name={trace_name}")
-        summary_lines.append(f"trace_{i+1}_ipc={all_ipcs[i]}")
+        summary_lines.append(f"trace_{i+1}_ipc={trace_ipcs[i]}")
     summary_payload = "\n".join(summary_lines) + "\n"
     for log_path in trace_log_paths:
         _append_log(log_path, summary_payload)
