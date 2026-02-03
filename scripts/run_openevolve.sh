@@ -7,14 +7,16 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 iterations=5
 initial_src=""
+context_agent="programmatic"
 
 usage() {
   cat <<'EOF'
-Usage: scripts/run_openevolve.sh [--iterations N] [--initial-program PATH|ipcp]
+Usage: scripts/run_openevolve.sh [--iterations N] [--initial-program PATH|ipcp] [--context-agent programmatic|langchain]
 
 Options:
   -i, --iterations N  Number of iterations to run (default: 5)
   -p, --initial-program PATH|ipcp  Initial prefetcher program to copy in (default: next_line.cc)
+  -c, --context-agent programmatic|langchain  Context agent mode (default: programmatic)
   -h, --help          Show this help message
 EOF
 }
@@ -27,6 +29,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     -p|--initial-program)
       initial_src="${2:-}"
+      shift 2
+      ;;
+    -c|--context-agent)
+      context_agent="${2:-}"
       shift 2
       ;;
     -h|--help)
@@ -51,9 +57,18 @@ if ! [[ "${iterations}" =~ ^[0-9]+$ ]]; then
   exit 2
 fi
 
+case "${context_agent}" in
+  programmatic|langchain)
+    ;;
+  *)
+    echo "Error: --context-agent must be 'programmatic' or 'langchain'." >&2
+    exit 2
+    ;;
+esac
+
 components_dir="${REPO_ROOT}/openevolve-components"
 next_line_src="${components_dir}/next_line.cc"
-ipcp_src="${components_dir}/ipcp_l2c.cc"
+ipcp_src="${components_dir}/initial_program.cc"
 initial_program="${components_dir}/initial_program.cc"
 run_id="$(date +%Y%m%d_%H%M%S)_$(python - <<'PY'
 import uuid
@@ -82,6 +97,7 @@ fi
 cp "${initial_src}" "${initial_program}"
 
 export OPENEVOLVE_RUN_ID="${run_id}"
+export OPENEvolve_CONTEXT_AGENT="${context_agent}"
 echo "Run ID: ${OPENEVOLVE_RUN_ID}"
 
 python "${REPO_ROOT}/openevolve/openevolve-run.py" \

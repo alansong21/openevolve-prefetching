@@ -14,13 +14,13 @@ evaluator:
 llm:
   api_base: "https://api.openai.com/v1"
   models:
-    - name: "gpt-4o"
+    - name: "o3"
       weight: 1.0
   evaluator_models:
     - name: "gpt-4o-mini"
       weight: 1.0
-  retries: 5
-  retry_delay: 5
+  retries: 2
+  retry_delay: 30
   temperature: 0.4
   max_tokens: 15000
   timeout: 120
@@ -122,9 +122,9 @@ prompt:
 
 # Keep the evolutionary population small so each expensive ChampSim run still makes progress.
 database[q]:
-  population_size: 12
-  archive_size: 6
-  num_islands: 1
+  population_size: 24
+  archive_size: 12
+  num_islands: 3
   exploration_ratio: 0.7
   exploitation_ratio: 0.3
   elite_selection_ratio: 0.1
