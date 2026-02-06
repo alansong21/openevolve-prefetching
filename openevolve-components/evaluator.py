@@ -25,6 +25,8 @@ CONFIG_PATH = Path(__file__).with_name("champsim_config.json").resolve()
 TRACES = [
     # Default to the single included trace in the repo
     REPO_ROOT / "400.perlbench-41B.champsimtrace.xz",
+    REPO_ROOT / "403.gcc-48B.champsimtrace.xz",
+    REPO_ROOT / "429.mcf-51B.champsimtrace.xz",
 ]
 
 CHAMPSIM_BIN = CHAMPSIM_ROOT / "bin" / "champsim"
