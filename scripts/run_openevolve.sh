@@ -68,7 +68,7 @@ esac
 
 components_dir="${REPO_ROOT}/openevolve-components"
 next_line_src="${components_dir}/next_line.cc"
-ipcp_src="${components_dir}/initial_program.cc"
+ipcp_src="${components_dir}/ipcp_l2c.cc"
 initial_program="${components_dir}/initial_program.cc"
 run_id="$(date +%Y%m%d_%H%M%S)_$(python - <<'PY'
 import uuid
