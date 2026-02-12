@@ -2,7 +2,6 @@
 
 #include <array>
 #include <cstdint>
-#include <cstddef>
 #include <iostream>
 
 #include "openevolve_prefetcher.h"
@@ -45,9 +44,6 @@ uint64_t prev_cpu_cycle = 0;
 uint64_t num_misses = 0;
 float mpkc = 0.0f;
 int spec_nl = 0;
-constexpr std::size_t kPfHistorySize = 512;
-std::array<uint64_t, kPfHistorySize> pf_history{};
-std::size_t pf_history_head = 0;
 
 uint16_t update_sig_l1(uint16_t old_sig, int delta)
 {
@@ -140,8 +136,6 @@ void openevolve_prefetcher::prefetcher_initialize()
   num_misses = 0;
   mpkc = 0.0f;
   spec_nl = 0;
-  pf_history.fill(0);
-  pf_history_head = 0;
 
   std::cout << "IPCP_AT_L2C_CONFIG" << std::endl
             << "NUM_IP_TABLE_L1_ENTRIES " << kNumIpTableEntries << std::endl
@@ -171,22 +165,6 @@ uint32_t openevolve_prefetcher::prefetcher_cache_operate(champsim::address addre
   uint16_t signature = 0;
   uint16_t last_signature = 0;
   int prefetch_degree = 3;
-  /* Adjust prefetch aggressiveness to current MSHR pressure.
-   * Keep at least one prefetch to preserve accuracy and boost when the pipe is free. */
-  {
-    const std::size_t mshr_occ  = intern_->get_mshr_occupancy();
-    const std::size_t mshr_cap  = intern_->get_mshr_size();
-    if (mshr_cap != 0) {
-      const double occ_ratio = static_cast<double>(mshr_occ) / static_cast<double>(mshr_cap);
-      if (occ_ratio > 0.85) {
-        prefetch_degree = 1; /* Very high pressure – stay conservative but active */
-      } else if (occ_ratio > 0.70) {
-        prefetch_degree = 2; /* High pressure */
-      } else if (occ_ratio < 0.20) {
-        prefetch_degree = 4; /* Pipe is free – be aggressive */
-      }
-    }
-  }
   int spec_nl_threshold = 15;
   int num_prefs = 0;
   uint32_t metadata = 0;
@@ -222,7 +200,7 @@ uint32_t openevolve_prefetcher::prefetcher_cache_operate(champsim::address addre
 
     const uint64_t pf_address = ((addr >> LOG2_BLOCK_SIZE) + 1) << LOG2_BLOCK_SIZE;
     metadata = encode_metadata(1, kNextLineType, spec_nl);
-    try_prefetch(pf_address, metadata);
+    prefetch_line(champsim::address{pf_address}, true, metadata);
     return metadata_in;
   }
 
@@ -249,6 +227,9 @@ uint32_t openevolve_prefetcher::prefetcher_cache_operate(champsim::address addre
   trackers_l1[index].conf = update_conf(static_cast<int>(stride), static_cast<int>(trackers_l1[index].last_stride), trackers_l1[index].conf);
   if (trackers_l1[index].conf == 0)
     trackers_l1[index].last_stride = stride;
+
+  // Dynamically adjust prefetch degree (2-5) based on confidence (0-3)
+  prefetch_degree = 2 + trackers_l1[index].conf;
 
   last_signature = trackers_l1[index].signature;
   dpt_l1[last_signature].conf =
@@ -283,10 +264,7 @@ uint32_t openevolve_prefetcher::prefetcher_cache_operate(champsim::address addre
     }
 
   } else if (trackers_l1[index].conf > 1 && trackers_l1[index].last_stride != 0) {
-    int stride_deg = prefetch_degree;
-    if (trackers_l1[index].conf == 3)
-      stride_deg *= 2;
-    for (int i = 0; i < stride_deg; i++) {
+    for (int i = 0; i < prefetch_degree; i++) {
       const uint64_t pf_address =
           (cl_addr + (trackers_l1[index].last_stride * static_cast<int64_t>(i + 1))) << LOG2_BLOCK_SIZE;
 
@@ -294,7 +272,7 @@ uint32_t openevolve_prefetcher::prefetcher_cache_operate(champsim::address addre
         break;
 
       metadata = encode_metadata(static_cast<int>(trackers_l1[index].last_stride), kConstStrideType, spec_nl);
-      try_prefetch(pf_address, metadata);
+      prefetch_line(champsim::address{pf_address}, true, metadata);
       num_prefs++;
     }
   } else if (dpt_l1[signature].conf >= 0 && dpt_l1[signature].delta != 0) {
@@ -310,7 +288,7 @@ uint32_t openevolve_prefetcher::prefetcher_cache_operate(champsim::address addre
 
       metadata = encode_metadata(0, kComplexStrideType, spec_nl);
       if (dpt_l1[signature].conf > 0) {
-        try_prefetch(pf_address, metadata);
+        prefetch_line(champsim::address{pf_address}, true, metadata);
         num_prefs++;
       }
       signature = update_sig_l1(signature, dpt_l1[signature].delta);
@@ -318,9 +296,13 @@ uint32_t openevolve_prefetcher::prefetcher_cache_operate(champsim::address addre
   }
 
   if (num_prefs == 0 && spec_nl == 1) {
-    const uint64_t pf_address = ((addr >> LOG2_BLOCK_SIZE) + 1) << LOG2_BLOCK_SIZE;
-    metadata = encode_metadata(1, kNextLineType, spec_nl);
-    prefetch_line(champsim::address{pf_address}, true, metadata);
+    for (int nl = 1; nl <= 2; nl++) {
+      const uint64_t pf_address = ((addr >> LOG2_BLOCK_SIZE) + static_cast<uint64_t>(nl)) << LOG2_BLOCK_SIZE;
+      if ((pf_address >> LOG2_PAGE_SIZE) != (addr >> LOG2_PAGE_SIZE))
+        break;
+      metadata = encode_metadata(nl, kNextLineType, spec_nl);
+      prefetch_line(champsim::address{pf_address}, true, metadata);
+    }
   }
 
   trackers_l1[index].last_cl_offset = cl_offset;

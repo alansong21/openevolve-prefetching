@@ -20,20 +20,14 @@ CHAMPSIM_ROOT = REPO_ROOT / "ChampSim"
 PREFETCHER_CC = Path(__file__).with_name("initial_program.cc")
 PREFETCHER_OBJ_DIR = CHAMPSIM_ROOT / ".csconfig" / "modules" / "prefetcher" / "openevolve_prefetcher"
 CONFIG_PATH = Path(__file__).with_name("champsim_config.json").resolve()
-# Manual definition of traces to evaluate
-# You can add your traces here
-TRACES = [
-    # Default to the single included trace in the repo
-    REPO_ROOT / "400.perlbench-41B.champsimtrace.xz",
-    REPO_ROOT / "403.gcc-48B.champsimtrace.xz",
-    REPO_ROOT / "429.mcf-51B.champsimtrace.xz",
-]
+TRACE_DIR = Path(os.environ.get("CHAMPSIM_TRACE_DIR", REPO_ROOT / "traces"))
+TRACE_NAME_TOKEN = os.environ.get("CHAMPSIM_TRACE_NAME_TOKEN", "champsimtrace").strip().lower()
 
 CHAMPSIM_BIN = CHAMPSIM_ROOT / "bin" / "champsim"
 
-SIM_INSTRUCTIONS = int(os.environ.get("CHAMPSIM_SIM_INSTR", 10_000_000))
-WARMUP_INSTRUCTIONS = int(os.environ.get("CHAMPSIM_WARMUP_INSTR", 1_000_000))
-SIM_TIMEOUT = int(os.environ.get("CHAMPSIM_TIMEOUT", 1200))
+SIM_INSTRUCTIONS = int(os.environ.get("CHAMPSIM_SIM_INSTR", 200_000_000))
+WARMUP_INSTRUCTIONS = int(os.environ.get("CHAMPSIM_WARMUP_INSTR", 50_000_000))
+SIM_TIMEOUT = int(os.environ.get("CHAMPSIM_TIMEOUT", 0))
 BUILD_TIMEOUT = int(os.environ.get("CHAMPSIM_BUILD_TIMEOUT", 600))
 MAKE_JOBS = int(os.environ.get("CHAMPSIM_JOBS", max(1, os.cpu_count() or 1)))
 TRACE_ITERATIONS = max(1, int(os.environ.get("CHAMPSIM_TRACE_ITERATIONS", 1)))
@@ -46,6 +40,20 @@ if RUN_ID:
     EVAL_LOG_ROOT = Path(__file__).with_name("openevolve_output") / "runs" / RUN_ID / "champsim"
 else:
     EVAL_LOG_ROOT = Path(__file__).with_name("openevolve_output") / "logs" / "champsim"
+
+
+def _discover_traces() -> list[Path]:
+    if not TRACE_DIR.exists():
+        return []
+    if not TRACE_DIR.is_dir():
+        return []
+
+    traces = [
+        path
+        for path in TRACE_DIR.rglob("*")
+        if path.is_file() and TRACE_NAME_TOKEN in path.name.lower()
+    ]
+    return sorted(traces)
 
 
 def _trim_log(payload: str, limit: int = 20000) -> str:
@@ -93,7 +101,8 @@ def _execute_with_stream(
     if process.stdout is None:
         raise RuntimeError("Failed to capture process stdout")
 
-    deadline = start + timeout
+    has_deadline = timeout > 0
+    deadline = start + timeout if has_deadline else None
     chunks: list[str] = []
     log_file = None
 
@@ -106,11 +115,15 @@ def _execute_with_stream(
             if process.poll() is not None:
                 break
 
-            remaining = deadline - time.time()
-            if remaining <= 0:
-                raise subprocess.TimeoutExpired(cmd, timeout)
+            if has_deadline:
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(cmd, timeout)
+                poll_interval = min(remaining, 1.0)
+            else:
+                poll_interval = 1.0
 
-            ready, _, _ = select.select([process.stdout], [], [], min(remaining, 1.0))
+            ready, _, _ = select.select([process.stdout], [], [], poll_interval)
             if ready:
                 chunk = process.stdout.readline()
                 if not chunk:
@@ -132,7 +145,10 @@ def _execute_with_stream(
                         last_output_time = now
                 continue
 
-        process.wait(timeout=max(0.0, deadline - time.time()))
+        if has_deadline:
+            process.wait(timeout=max(0.0, deadline - time.time()))
+        else:
+            process.wait()
     except subprocess.TimeoutExpired as exc:
         process.kill()
         process.wait()
@@ -168,14 +184,14 @@ def _ensure_configuration() -> None:
     _print_console_log("ChampSim config", output)
 
 
-def _ensure_prerequisites() -> None:
+def _ensure_prerequisites(traces: list[Path]) -> None:
     if not CHAMPSIM_ROOT.exists():
         raise FileNotFoundError(f"ChampSim root not found at {CHAMPSIM_ROOT}")
-    missing_traces = [trace for trace in TRACES if not trace.exists()]
+    missing_traces = [trace for trace in traces if not trace.exists()]
     if missing_traces:
         missing_list = ", ".join(str(trace) for trace in missing_traces)
         raise FileNotFoundError(
-            f"Trace file(s) not found at {missing_list}. Update TRACES in evaluator.py or run setup_champsim.sh"
+            f"Trace file(s) not found at {missing_list}"
         )
     if not PREFETCHER_CC.exists():
         raise FileNotFoundError(f"Prefetcher source missing: {PREFETCHER_CC}")
@@ -274,14 +290,18 @@ def evaluate(program_path: str) -> EvaluationResult:
 
     start = time.time()
     program_path = Path(program_path)
+    traces = _discover_traces()
     run_id = time.strftime("%Y%m%d_%H%M%S") + f"_{uuid.uuid4().hex[:8]}"
     run_log_dir = EVAL_LOG_ROOT / run_id
-    trace_log_paths = [run_log_dir / f"{trace.name}.log" for trace in TRACES]
+    trace_log_paths = [run_log_dir / f"{trace.name}.log" for trace in traces]
 
     try:
-        if not TRACES:
-            return _failure_result("No traces configured. Update TRACES in evaluator.py")
-        _ensure_prerequisites()
+        if not traces:
+            return _failure_result(
+                f"No traces found under {TRACE_DIR} using token '{TRACE_NAME_TOKEN}'. "
+                "Set CHAMPSIM_TRACE_DIR/CHAMPSIM_TRACE_NAME_TOKEN to adjust discovery."
+            )
+        _ensure_prerequisites(traces)
         _ensure_configuration()
         _copy_candidate(program_path)
         _invalidate_prefetcher_object()
@@ -361,8 +381,8 @@ def evaluate(program_path: str) -> EvaluationResult:
 
     # Calculate maximum parallel processes to avoid overloading the system
     max_workers = max(1, os.cpu_count() or 1 - 5)
-    max_workers = min(max_workers, len(TRACES))
-    print(f"Running ChampSim in parallel for {len(TRACES)} traces using {max_workers} workers")
+    max_workers = min(max_workers, len(traces))
+    print(f"Running ChampSim in parallel for {len(traces)} traces using {max_workers} workers")
     
     trace_runs = {
         trace.name: {
@@ -373,7 +393,7 @@ def evaluate(program_path: str) -> EvaluationResult:
             "log_path": str(run_log_dir / f"{trace.name}.log"),
             "heartbeat_logs": [],
         }
-        for trace in TRACES
+        for trace in traces
     }
     
     try:
@@ -386,7 +406,7 @@ def evaluate(program_path: str) -> EvaluationResult:
                         run_log_dir / f"{trace.name}.log",
                         iteration,
                     ): trace
-                    for trace in TRACES
+                    for trace in traces
                 }
 
                 done, pending = concurrent.futures.wait(
@@ -436,7 +456,7 @@ def evaluate(program_path: str) -> EvaluationResult:
     all_log_paths = []
     all_heartbeat_logs = []
 
-    for trace in TRACES:
+    for trace in traces:
         run = trace_runs[trace.name]
         avg_ipc = sum(run["ipcs"]) / len(run["ipcs"]) if run["ipcs"] else 0.0
         trace_ipcs.append(avg_ipc)
@@ -463,7 +483,7 @@ def evaluate(program_path: str) -> EvaluationResult:
     
     artifacts = {
         "build_log": _trim_log(build_stdout),
-        "num_traces": len(TRACES),
+        "num_traces": len(traces),
         "successful_traces": len(successful_ipcs),
         "trace_iterations": TRACE_ITERATIONS,
         "trace_results": trace_results
@@ -475,7 +495,7 @@ def evaluate(program_path: str) -> EvaluationResult:
         "build_time_s": build_time,
         "sim_time_s": sim_time,
         "wall_time_s": total_time,
-        "traces_evaluated": len(TRACES),
+        "traces_evaluated": len(traces),
         "successful_traces": len(successful_ipcs),
     }
     
@@ -489,7 +509,7 @@ def evaluate(program_path: str) -> EvaluationResult:
         f"build_time_s={build_time}",
         f"sim_time_s={sim_time}",
         f"wall_time_s={total_time}",
-        f"traces_evaluated={len(TRACES)}",
+        f"traces_evaluated={len(traces)}",
         f"successful_traces={len(successful_ipcs)}",
     ]
     for i, trace_name in enumerate(all_traces):

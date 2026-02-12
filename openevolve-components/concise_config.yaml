@@ -6,7 +6,7 @@ file_suffix: ".cc"
 max_code_length: 150000
 
 evaluator:
-  timeout: 1800          # ChampSim runs are long; give the process time to finish
+  timeout: 2147483647    # Effectively no OpenEvolve evaluator cap (framework expects an integer timeout)
   parallel_evaluations: 1 # Rebuilds are serialized to avoid clobbering artifacts
   cascade_evaluation: false
   use_llm_feedback: true   # Surface evaluator artifacts (build/run errors) back to the LLM

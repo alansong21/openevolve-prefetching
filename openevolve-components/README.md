@@ -32,7 +32,7 @@ by the resulting IPC.
 
 3. (Optional) Customize evaluation settings:
 
-   * Edit `TRACES` in `openevolve-components/evaluator.py` to change the trace list.
+   * By default, `evaluator.py` discovers traces recursively under `traces/` by filename token `champsimtrace`. Use `CHAMPSIM_TRACE_DIR` and `CHAMPSIM_TRACE_NAME_TOKEN` to override.
    * `CHAMPSIM_JOBS` – `make -j` fan-out when rebuilding.
    * `CHAMPSIM_SIM_INSTR` / `CHAMPSIM_WARMUP_INSTR` – instruction counts passed
      to the binary.

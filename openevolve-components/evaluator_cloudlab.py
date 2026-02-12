@@ -36,7 +36,7 @@ CHAMPSIM_BIN = CHAMPSIM_ROOT / "bin" / "champsim"
 
 SIM_INSTRUCTIONS = int(os.environ.get("CHAMPSIM_SIM_INSTR", 50_000_000))
 WARMUP_INSTRUCTIONS = int(os.environ.get("CHAMPSIM_WARMUP_INSTR", 10_000_000))
-SIM_TIMEOUT = int(os.environ.get("CHAMPSIM_TIMEOUT", 1200))
+SIM_TIMEOUT = int(os.environ.get("CHAMPSIM_TIMEOUT", 0))
 BUILD_TIMEOUT = int(os.environ.get("CHAMPSIM_BUILD_TIMEOUT", 600))
 MAKE_JOBS = int(os.environ.get("CHAMPSIM_JOBS", max(1, os.cpu_count() or 1)))
 IPC_PATTERN = re.compile(r"cumulative IPC:\s+([0-9.]+)")
@@ -216,6 +216,7 @@ def _run_champsim_remote(agent: CloudLabAgent, node: str, trace: Path, repo_root
     champsim_bin_rel = CHAMPSIM_BIN.relative_to(REPO_ROOT)
     
     start = time.time()
+    timeout_prefix = f"timeout {SIM_TIMEOUT} " if SIM_TIMEOUT > 0 else ""
     cmd = f"""
         cd {repo_root}
         if [ ! -f "{champsim_bin_rel}" ]; then
@@ -226,7 +227,7 @@ def _run_champsim_remote(agent: CloudLabAgent, node: str, trace: Path, repo_root
             echo "ERROR: Trace file not found at {trace_remote}"
             exit 1
         fi
-        timeout {SIM_TIMEOUT} {champsim_bin_rel} \\
+        {timeout_prefix}{champsim_bin_rel} \\
             --warmup-instructions {WARMUP_INSTRUCTIONS} \\
             --simulation-instructions {SIM_INSTRUCTIONS} \\
             {trace_remote}
