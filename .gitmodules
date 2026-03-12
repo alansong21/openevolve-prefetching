@@ -7,3 +7,6 @@
 [submodule "cloudlab-lib"]
 	path = cloudlab-lib
 	url = https://github.com/varungohil/cloudlab-lib.git
+[submodule "cbp-ng"]
+	path = cbp-ng
+	url = https://github.com/AmpereComputing/cbp-ng.git
