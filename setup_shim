@@ -60,8 +60,8 @@ ensure_env() {
   if conda env list | awk '{print $1}' | grep -qx "$ENV_NAME"; then
     log "Conda env '$ENV_NAME' already exists."
   else
-    log "Creating conda env '$ENV_NAME' with Python $PY_VER ..."
-    conda create -n "$ENV_NAME" "python=$PY_VER"
+    log "Creating conda env '$ENV_NAME' with Python $PY_VER and pip ..."
+    conda create -n "$ENV_NAME" "python=$PY_VER" pip
   fi
   conda activate "$ENV_NAME"
 }
