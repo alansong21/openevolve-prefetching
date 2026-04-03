@@ -1,0 +1,93 @@
+max_iterations: 5
+checkpoint_interval: 1
+log_level: "DEBUG"
+language: cpp
+file_suffix: ".cc"
+max_code_length: 150000
+
+evaluator:
+  timeout: 2147483647    # Effectively no OpenEvolve evaluator cap (framework expects an integer timeout)
+  parallel_evaluations: 1 # Rebuilds are serialized to avoid clobbering artifacts
+  cascade_evaluation: false
+  use_llm_feedback: true   # Surface evaluator artifacts (build/run errors) back to the LLM
+
+llm:
+  api_base: "https://api.openai.com/v1"
+  models:
+    - name: "o3"
+      weight: 1.0
+  evaluator_models:
+    - name: "gpt-4o-mini"
+      weight: 1.0
+  retries: 2
+  retry_delay: 30
+  temperature: 0.4
+  max_tokens: 15000
+  timeout: 120
+
+prompt:
+  system_message: |
+    You are an expert computer architect and branch prediction researcher.
+
+    You are optimizing a CBP-NG branch predictor for championship-style scoring.
+
+    ================================
+    OBJECTIVE
+    ================================
+    - Maximize the VFS score (Voltage-Frequency-Scaled Speedup).
+    - VFS reflects prediction accuracy, energy efficiency, and implementation cost/complexity.
+    - Favor practical, hardware-plausible designs that improve score without gaming the benchmark.
+
+    ================================
+    TARGET
+    ================================
+    - Target file: `workflows/cbp_ng/initial_program.hpp`
+    - The evaluator rebuilds CBP-NG and runs traces each iteration.
+    - OpenEvolve optimizes `combined_score`, which is set to VFS by evaluator.
+
+    ================================
+    HARD RULES
+    ================================
+    - Do not modify CBP-NG model/library code or simulator interfaces.
+    - Implement only within the predictor code being evolved.
+    - Do not attempt to subvert HARCOM/runtime constraints (including reading hidden runtime values).
+    - Do not key behavior to specific trace identities, names, or per-trace fingerprints.
+    - Generic workload-adaptive behavior is allowed and encouraged.
+    - Code must compile and run end-to-end with no crashes or undefined behavior.
+
+    ================================
+    DESIGN GUIDANCE
+    ================================
+    - Prioritize strong branch prediction accuracy with careful energy/latency tradeoffs.
+    - Keep structures bounded and hardware-reasonable (state size, table counts, update logic).
+    - Be explicit and clean in implementation; comments inside code should explain mechanisms and cost rationale.
+    - Novel ideas are welcome, but only if they improve practical score.
+
+    ================================
+    RESPONSE FORMAT (STRICT)
+    ================================
+    - Respond ONLY with SEARCH/REPLACE diff blocks in this exact format:
+
+      <<<<<<< SEARCH
+      (exact code to find)
+      =======
+      (exact replacement code)
+      >>>>>>> REPLACE
+
+    - No prose, markdown, or text outside diff blocks.
+    - SEARCH blocks must match current code exactly.
+    - Do not include unchanged code.
+
+    Your response must be valid SEARCH/REPLACE blocks only.
+  include_artifacts: true      # Add build/runtime artifacts (errors) into the LLM prompt
+  max_artifact_bytes: 40960    # Allow larger logs so build errors aren’t truncated
+
+# Keep the evolutionary population small so each expensive ChampSim run still makes progress.
+database[q]:
+  population_size: 24
+  archive_size: 12
+  num_islands: 3
+  exploration_ratio: 0.7
+  exploitation_ratio: 0.3
+  elite_selection_ratio: 0.1
+  log_prompts: true

@@ -98,6 +98,7 @@ cp "${initial_src}" "${initial_program}"
 
 export OPENEVOLVE_RUN_ID="${run_id}"
 export OPENEvolve_CONTEXT_AGENT="${context_agent}"
+export OPENEVOLVE_WORKFLOW="champsim"
 echo "Run ID: ${OPENEVOLVE_RUN_ID}"
 
 python "${REPO_ROOT}/openevolve/openevolve-run.py" \
