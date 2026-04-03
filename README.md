@@ -3,7 +3,7 @@
 This repository wires OpenEvolve into the ChampSim simulator so evolution edits a C++ prefetcher (`openevolve-components/initial_program.cc`) and evaluates it on ChampSim traces.
 
 ## Setup
-- Requires Ubuntu/Debian with `sudo` for packages (`pkg-config`, build tools, CMake, Ninja, git, curl, unzip, tar, zip, xz-utils).
+- Requires Ubuntu/Debian with `sudo` for packages (`pkg-config`, build tools, CMake, Ninja, git, curl, unzip, tar, zip, xz-utils, python3.10-venv).
 - Create and activate a Python virtual environment at the repo root:
   ```bash
   python3 -m venv .venv
@@ -45,10 +45,29 @@ This repository wires OpenEvolve into the ChampSim simulator so evolution edits 
   ```
 - Each iteration overwrites `openevolve-components/initial_program.cc`, rebuilds `ChampSim`, runs the configured traces, and reports IPC as the score. Logs and artifacts land under `openevolve-components/openevolve_output/`.
 
+## CBP-NG workflow
+- Download CBP-NG traces:
+  ```bash
+  ./scripts/download_cbpng_traces.sh
+  ```
+- Run OpenEvolve against CBP-NG:
+  ```bash
+  python openevolve/openevolve-run.py \
+    workflows/cbp_ng/initial_program.hpp \
+    workflows/cbp_ng/evaluator.py \
+    --config workflows/cbp_ng/config.yaml \
+    --iterations 5
+  ```
+- Optional unified launcher:
+  ```bash
+  ./scripts/run_openevolve_workflow.sh --workflow cbp-ng --iterations 5
+  ```
+
 ## Useful notes
 - The ChampSim module `ChampSim/prefetcher/openevolve_prefetcher` is a two-line shim that includes the shared sources under `openevolve-components/`, keeping the submodule clean.
 - Update the trace list by editing `TRACES` in `openevolve-components/evaluator.py`. Other knobs (jobs, timeouts, instruction counts) are documented in `openevolve-components/README.md`.
 - Ready-to-run Bingo, IPCP, and MLOP wrappers live under `prefetchers/{bingo,ipcp,mlop}/` with scripts in `scripts/` for copying them into the ChampSim submodule.
+- Workflow-specific assets live under `workflows/` to keep simulator integrations extensible.
 - Quick API sanity check:
   ```bash
   python smoke.py

@@ -14,6 +14,16 @@ need_cmd() {
   command -v "$1" >/dev/null 2>&1 || { echo "Missing required command: $1"; exit 1; }
 }
 
+install_system_python_deps() {
+  if command -v apt-get >/dev/null 2>&1; then
+    log "Installing system dependency: python3.10-venv ..."
+    sudo apt-get update
+    sudo apt-get install -y python3.10-venv
+  else
+    log "apt-get not found; skipping python3.10-venv installation."
+  fi
+}
+
 download_miniforge() {
   local arch
   arch=$(uname -m)
@@ -115,6 +125,7 @@ make_project_dir() {
 main() {
   need_cmd uname
   need_cmd git
+  install_system_python_deps
   download_miniforge
   install_or_update_miniforge
   activate_conda
