@@ -23,6 +23,7 @@ CBPNG_BIN = CBPNG_ROOT / "cbp"
 
 TRACE_DIR = Path(os.environ.get("CBPNG_TRACE_DIR", REPO_ROOT / "traces" / "cbp-ng"))
 TRACE_SUFFIX = os.environ.get("CBPNG_TRACE_SUFFIX", "_trace.gz")
+TOOLCHAIN_BIN = Path(os.environ.get("CBPNG_TOOLCHAIN_BIN", REPO_ROOT / "toolchains" / "cbp_ng" / "bin"))
 RUN_TIMEOUT = int(os.environ.get("CBPNG_TIMEOUT", 0))
 BUILD_TIMEOUT = int(os.environ.get("CBPNG_BUILD_TIMEOUT", 300))
 WARMUP_INSTRUCTIONS = int(os.environ.get("CBPNG_WARMUP_INSTR", 1_000_000))
@@ -76,6 +77,7 @@ def _run_command(
     timeout: int,
     label: str,
     log_path: Path | None = None,
+    env: dict[str, str] | None = None,
 ) -> tuple[str, float]:
     start = time.time()
     completed = subprocess.run(
@@ -87,6 +89,7 @@ def _run_command(
         capture_output=True,
         timeout=None if timeout <= 0 else timeout,
         check=False,
+        env=env,
     )
     output = (completed.stdout or "") + (completed.stderr or "")
 
@@ -121,8 +124,17 @@ def _ensure_prerequisites(traces: list[Path]) -> None:
 
 
 def _build_cbpng(log_path: Path | None = None) -> tuple[str, float]:
-    cmd = ["./compile", "cbp", "-DPREDICTOR=openevolve_predictor"]
-    return _run_command(cmd, cwd=CBPNG_ROOT, timeout=BUILD_TIMEOUT, label="CBP-NG build", log_path=log_path)
+    build_env = os.environ.copy()
+    if TOOLCHAIN_BIN.is_dir():
+        build_env["PATH"] = f"{TOOLCHAIN_BIN}:{build_env.get('PATH', '')}"
+    cmd = [
+        "./compile",
+        "cbp",
+        "-include",
+        "predictors/openevolve_predictor.hpp",
+        "-DPREDICTOR=openevolve_predictor",
+    ]
+    return _run_command(cmd, cwd=CBPNG_ROOT, timeout=BUILD_TIMEOUT, label="CBP-NG build", log_path=log_path, env=build_env)
 
 
 def _trace_name(trace: Path) -> str:

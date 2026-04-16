@@ -44,6 +44,7 @@ prompt:
     - Target file: `workflows/cbp_ng/initial_program.hpp`
     - The evaluator rebuilds CBP-NG and runs traces each iteration.
     - OpenEvolve optimizes `combined_score`, which is set to VFS by evaluator.
+    - Additional codebase context may be appended to the end of the user prompt under a clearly marked agent-provided context section. Treat that appended context as authoritative reference material for HARCOM/CBP-NG APIs and examples.
 
     ================================
     HARD RULES
@@ -54,6 +55,70 @@ prompt:
     - Do not key behavior to specific trace identities, names, or per-trace fingerprints.
     - Generic workload-adaptive behavior is allowed and encouraged.
     - Code must compile and run end-to-end with no crashes or undefined behavior.
+
+    ================================
+    HARCOM KNOWLEDGE
+    ================================
+    - HARCOM is a hardware complexity model embedded in C++, not an unconstrained software environment. Treat predictor code as hardware with timing, energy, storage, fanout, and wiring costs.
+    - The purpose is to approximate realistic hardware complexity inside the simulator. A design that is functionally clever but violates HARCOM constraints is not acceptable.
+    - HARCOM distinguishes transient values, persistent storage, and SRAM-like memories:
+      `val<N>` is a transient hardware value with timing and location.
+      `reg<N>` is persistent hardware state.
+      `arr<...>` is an array of HARCOM values.
+      `ram<T, N>` is a modeled SRAM, not a free software array.
+
+    - Data type discipline:
+      Unknown runtime data must remain in HARCOM types such as `val`, `reg`, `arr`, and `ram`.
+      Do not smuggle hardware state through ordinary mutable C++ integers, helper fields, or hidden side channels.
+      Do not rely on type punning, private member access, unions, reinterpretation tricks, or other no-hidden-cost violations.
+      Persistent modifiable state should be expressed with `reg` or `ram`, not plain C++ variables whose lifetime spans cycles.
+
+    - Storage and access rules:
+      `reg` behaves like hardware storage and can be written at most once per cycle.
+      All storage objects (`reg` and `ram`) effectively live in the hardware model and must obey HARCOM lifetime rules.
+      `ram` behaves like a single-ported SRAM by default. Assume only one access per cycle per RAM object unless the infrastructure explicitly enables something broader.
+      A RAM access means read or write. Do not assume software-style unlimited indexing or multi-ported behavior.
+      RAM reads are timing-aware: do not assume a read can see a value that is only written later in timing terms.
+
+    - Control-flow semantics:
+      `execute_if` is conditional hardware execution, not free software branching.
+      Conditional register writes and conditional RAM reads/writes still count against HARCOM's per-cycle limits.
+      Gating work with `execute_if` may suppress some dynamic activity, but it does not make accesses or structural cost disappear.
+
+    - Timing model:
+      Operations on HARCOM values add delay. In general, output timing depends on the latest arriving input plus the operator delay.
+      Prediction-path logic should therefore be kept short and simple.
+      Arithmetic depth, wide mux structures, and repeated dependent computations can easily stretch the critical path.
+      RAM access timing matters; treat each read as a meaningful hardware event, not just data lookup.
+
+    - Fanout and value reuse:
+      Reusing a named value has hardware cost. HARCOM pessimistically models repeated reads unless fanout is managed intentionally.
+      Keep one-use transient values simple and unnamed when practical.
+      Use `.fo1()` when a named transient is intentionally read once.
+      Use `.fanout(...)` only when broader reuse is truly necessary.
+      Conditions used widely in `execute_if` blocks can need explicit fanout awareness as well.
+
+    - Wiring and locality:
+      HARCOM models locations and approximate wiring cost. Moving values between distant structures can add delay and energy.
+      Keep logic local when possible.
+      Prefer designs where data is consumed near where it is produced instead of repeatedly moving it across structures.
+
+    - Predictor-writing implications:
+      Do not design as if tables were free software arrays.
+      Be especially careful in `predict1()` and `update_condbr()`: multiple same-cycle SRAM reads often violate HARCOM legality or timing assumptions.
+      Avoid rereading SRAM tables when values can be saved in registers and reused.
+      If multiple pieces of state are always accessed together, consider packing them into one table entry rather than spreading them across many independently read RAMs.
+      If a design needs many tables, ensure the schedule is hardware-plausible and does not implicitly require illegal same-cycle access patterns.
+
+    - Preferred operation style:
+      Prefer simple hardware-plausible logic such as XORs, shifts, masking, bit slicing, comparisons, and mux-like selection.
+      Keep structures bounded and explicit.
+      Avoid clever software-style structures with hidden cost.
+      Multipliers, dividers, excessive modulo logic, elaborate helper state, and wide multi-table hybrids can hurt legality, timing, compilation, or energy.
+
+    - Optimization strategy under HARCOM:
+      Favor compact, low-latency, bounded predictors that obey HARCOM cleanly over larger designs that look stronger in software terms but imply unrealistic hardware.
+      A predictor that is slightly simpler but always legal, buildable, and low-latency is better than a theoretically stronger design that triggers RAM access aborts, extra-cycle explosions, or no-hidden-cost violations.
 
     ================================
     DESIGN GUIDANCE

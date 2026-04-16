@@ -61,7 +61,7 @@ case "$workflow" in
     ;;
   cbp-ng)
     workflow_env="cbp_ng"
-    default_initial="$REPO_ROOT/workflows/cbp_ng/initial_program.hpp"
+    default_initial="$REPO_ROOT/workflows/cbp_ng/seed_program.hpp"
     evaluator="$REPO_ROOT/workflows/cbp_ng/evaluator.py"
     config="$REPO_ROOT/workflows/cbp_ng/config.yaml"
     target_initial="$REPO_ROOT/workflows/cbp_ng/initial_program.hpp"
@@ -81,12 +81,7 @@ if [[ ! -f "$initial_src" ]]; then
   exit 1
 fi
 
-initial_src_real="$(realpath "$initial_src")"
-target_initial_real="$(realpath "$target_initial")"
-
-if [[ "$initial_src_real" != "$target_initial_real" ]]; then
-  cp "$initial_src" "$target_initial"
-fi
+cp "$initial_src" "$target_initial"
 
 run_id="$(date +%Y%m%d_%H%M%S)_$(python3 - <<'PY'
 import uuid

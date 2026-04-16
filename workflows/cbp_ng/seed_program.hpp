@@ -14,18 +14,18 @@ struct openevolve_predictor : predictor {
      * while keeping the workflow's expected predictor name.
      */
 
-    // 16384-entry 2-bit counter table (14-bit index) – small area increase for noticeably lower aliasing
-    ram<val<2>, 16384> counters;
+    // 4096-entry 2-bit counter table (12-bit index) – modest capacity boost with limited storage cost
+    ram<val<2>, 4096> counters;
     reg<2>  counter;
-    // 14-bit global history register: tracks a longer branch outcome window
-    reg<14> ghr;
+    // 12-bit global history register: captures a slightly longer path history
+    reg<12> ghr;
 
-    /* Compact 14-bit gshare-style index generator with lightweight XOR folding */
-    val<14> compute_index(val<64> pc) {
-        /* Fold the 64-bit PC into 14-bit slices and XOR-reduce */
-        val<14> pc_hash = pc.make_array(val<14>{}).fold_xor();
-        /* Combine with the current global history */
-        val<14> ghr_bits = val<14>{ghr};
+    /* Compact 12-bit gshare index generator with light-weight XOR folding */
+    val<12> compute_index(val<64> pc) {
+        /* Fold the 64-bit PC into 12 bits via XOR of 12-bit slices */
+        val<12> pc_hash = pc.make_array(val<12>{}).fold_xor();
+        /* Combine with current global history */
+        val<12> ghr_bits = val<12>{ghr};
         return pc_hash ^ ghr_bits;
     }
 

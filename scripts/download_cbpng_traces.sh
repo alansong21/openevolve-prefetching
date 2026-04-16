@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST_DIR="${CBPNG_TRACE_DIR:-$ROOT_DIR/traces/cbp-ng}"
 ARCHIVE_PATH="$DEST_DIR/cbp-ng_training_traces.tar.gz"
+EXTRACTED_DIR="$DEST_DIR/cbp-ng_training_traces"
 TRACE_URL="https://drive.google.com/file/d/1kLKn_iKVBP-YxRpC4WiCy-ca-agU0BFG/view"
 
 ensure_gdown() {
@@ -25,8 +26,12 @@ main() {
     echo "Archive already exists: $ARCHIVE_PATH"
   fi
 
-  echo "Extracting traces under $DEST_DIR ..."
-  tar xf "$ARCHIVE_PATH" -C "$DEST_DIR"
+  if [[ -d "$EXTRACTED_DIR" ]] && find "$EXTRACTED_DIR" -type f -name "*${CBPNG_TRACE_SUFFIX:-_trace.gz}" -print -quit | grep -q .; then
+    echo "Traces already extracted under $EXTRACTED_DIR"
+  else
+    echo "Extracting traces under $DEST_DIR ..."
+    tar xf "$ARCHIVE_PATH" -C "$DEST_DIR"
+  fi
 
   echo "Done. Set CBPNG_TRACE_DIR=$DEST_DIR when running evaluator if needed."
 }
