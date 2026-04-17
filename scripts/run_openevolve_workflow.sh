@@ -7,15 +7,17 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 workflow="champsim"
 iterations=5
 initial_src=""
+context_bundle=""
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/run_openevolve_workflow.sh [--workflow champsim|cbp-ng] [--iterations N] [--initial-program PATH]
+Usage: scripts/run_openevolve_workflow.sh [--workflow champsim|cbp-ng] [--iterations N] [--initial-program PATH] [--context-bundle NAME]
 
 Options:
   -w, --workflow NAME      Workflow to run (default: champsim)
   -i, --iterations N       Number of iterations (default: 5)
   -p, --initial-program P  Initial program path override
+  -c, --context-bundle N   Explicit context bundle (default: workflow-specific)
   -h, --help               Show this help
 USAGE
 }
@@ -32,6 +34,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     -p|--initial-program)
       initial_src="${2:-}"
+      shift 2
+      ;;
+    -c|--context-bundle)
+      context_bundle="${2:-}"
       shift 2
       ;;
     -h|--help)
@@ -54,6 +60,7 @@ fi
 case "$workflow" in
   champsim)
     workflow_env="champsim"
+    default_context_bundle="champsim"
     default_initial="$REPO_ROOT/openevolve-components/next_line.cc"
     evaluator="$REPO_ROOT/openevolve-components/evaluator.py"
     config="$REPO_ROOT/openevolve-components/concise_config.yaml"
@@ -61,6 +68,7 @@ case "$workflow" in
     ;;
   cbp-ng)
     workflow_env="cbp_ng"
+    default_context_bundle="cbp_ng"
     default_initial="$REPO_ROOT/workflows/cbp_ng/seed_program.hpp"
     evaluator="$REPO_ROOT/workflows/cbp_ng/evaluator.py"
     config="$REPO_ROOT/workflows/cbp_ng/config.yaml"
@@ -68,6 +76,19 @@ case "$workflow" in
     ;;
   *)
     echo "Error: --workflow must be champsim or cbp-ng" >&2
+    exit 2
+    ;;
+esac
+
+if [[ -z "$context_bundle" ]]; then
+  context_bundle="$default_context_bundle"
+fi
+
+case "$context_bundle" in
+  champsim|cbp_ng)
+    ;;
+  *)
+    echo "Error: --context-bundle must be champsim or cbp_ng" >&2
     exit 2
     ;;
 esac
@@ -90,9 +111,11 @@ PY
 )"
 export OPENEVOLVE_RUN_ID="$run_id"
 export OPENEVOLVE_WORKFLOW="$workflow_env"
+export OPENEvolve_CONTEXT_BUNDLE="$context_bundle"
 
 echo "Workflow: $workflow"
 echo "Run ID: $OPENEVOLVE_RUN_ID"
+echo "Context bundle: $OPENEvolve_CONTEXT_BUNDLE"
 
 python3 "$REPO_ROOT/openevolve/openevolve-run.py" \
   "$target_initial" \

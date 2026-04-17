@@ -8,15 +8,17 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 iterations=5
 initial_src=""
 context_agent="programmatic"
+context_bundle="champsim"
 
 usage() {
   cat <<'EOF'
-Usage: scripts/run_openevolve.sh [--iterations N] [--initial-program PATH|ipcp] [--context-agent programmatic|langchain]
+Usage: scripts/run_openevolve.sh [--iterations N] [--initial-program PATH|ipcp] [--context-agent programmatic|langchain] [--context-bundle champsim|cbp_ng]
 
 Options:
   -i, --iterations N  Number of iterations to run (default: 5)
   -p, --initial-program PATH|ipcp  Initial prefetcher program to copy in (default: next_line.cc)
   -c, --context-agent programmatic|langchain  Context agent mode (default: programmatic)
+  -b, --context-bundle champsim|cbp_ng  Explicit context bundle (default: champsim)
   -h, --help          Show this help message
 EOF
 }
@@ -33,6 +35,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     -c|--context-agent)
       context_agent="${2:-}"
+      shift 2
+      ;;
+    -b|--context-bundle)
+      context_bundle="${2:-}"
       shift 2
       ;;
     -h|--help)
@@ -62,6 +68,15 @@ case "${context_agent}" in
     ;;
   *)
     echo "Error: --context-agent must be 'programmatic' or 'langchain'." >&2
+    exit 2
+    ;;
+esac
+
+case "${context_bundle}" in
+  champsim|cbp_ng)
+    ;;
+  *)
+    echo "Error: --context-bundle must be 'champsim' or 'cbp_ng'." >&2
     exit 2
     ;;
 esac
@@ -98,6 +113,7 @@ cp "${initial_src}" "${initial_program}"
 
 export OPENEVOLVE_RUN_ID="${run_id}"
 export OPENEvolve_CONTEXT_AGENT="${context_agent}"
+export OPENEvolve_CONTEXT_BUNDLE="${context_bundle}"
 export OPENEVOLVE_WORKFLOW="champsim"
 echo "Run ID: ${OPENEVOLVE_RUN_ID}"
 
