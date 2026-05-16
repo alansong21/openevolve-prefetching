@@ -10,7 +10,11 @@ cd "$SCRIPT_DIR"
 
 OPENEVOLVE_CONFIG="$SCRIPT_DIR/openevolve-components/champsim_config.json"
 OPENEVOLVE_SOURCE_DIR="$SCRIPT_DIR/openevolve-components"
-OPENEVOLVE_TARGET_DIR="$SCRIPT_DIR/ChampSim/prefetcher/openevolve_prefetcher"
+OPENEVOLVE_PREFETCHER_TARGET_DIR="$SCRIPT_DIR/ChampSim/prefetcher/openevolve_prefetcher"
+OPENEVOLVE_REPLACEMENT_TARGET_DIR="$SCRIPT_DIR/ChampSim/replacement/openevolve_replacement"
+# Back-compat alias (the variable name was singular before the joint
+# prefetcher+replacement workflow was added).
+OPENEVOLVE_TARGET_DIR="$OPENEVOLVE_PREFETCHER_TARGET_DIR"
 
 TRACE_BASE_URL="https://dpc3.compas.cs.stonybrook.edu/champsim-traces/speccpu"
 TRACE_FILES=(
@@ -43,12 +47,12 @@ echo "Updating git submodules..."
 git submodule update --init
 
 echo "Syncing OpenEvolve prefetcher sources into ChampSim..."
-mkdir -p "$OPENEVOLVE_TARGET_DIR"
+mkdir -p "$OPENEVOLVE_PREFETCHER_TARGET_DIR"
 if [[ ! -f "$OPENEVOLVE_SOURCE_DIR/openevolve_prefetcher.h" || ! -f "$OPENEVOLVE_SOURCE_DIR/initial_program.cc" ]]; then
   echo "Error: expected OpenEvolve prefetcher sources missing in $OPENEVOLVE_SOURCE_DIR" >&2
   exit 1
 fi
-cat >"$OPENEVOLVE_TARGET_DIR/openevolve_prefetcher.h" <<'EOF'
+cat >"$OPENEVOLVE_PREFETCHER_TARGET_DIR/openevolve_prefetcher.h" <<'EOF'
 #ifndef PREFETCHER_OPENEVOLVE_PREFETCHER_H
 #define PREFETCHER_OPENEVOLVE_PREFETCHER_H
 
@@ -57,8 +61,28 @@ cat >"$OPENEVOLVE_TARGET_DIR/openevolve_prefetcher.h" <<'EOF'
 #endif
 EOF
 
-cat >"$OPENEVOLVE_TARGET_DIR/openevolve_prefetcher.cc" <<'EOF'
+cat >"$OPENEVOLVE_PREFETCHER_TARGET_DIR/openevolve_prefetcher.cc" <<'EOF'
 #include "../../../../openevolve-components/initial_program.cc"
+EOF
+
+echo "Syncing OpenEvolve replacement sources into ChampSim..."
+mkdir -p "$OPENEVOLVE_REPLACEMENT_TARGET_DIR"
+if [[ ! -f "$OPENEVOLVE_SOURCE_DIR/openevolve_replacement.h" || ! -f "$OPENEVOLVE_SOURCE_DIR/initial_replacement.cc" ]]; then
+  echo "Error: expected OpenEvolve replacement sources missing in $OPENEVOLVE_SOURCE_DIR" >&2
+  echo "       (needed by the joint prefetcher+replacement workflow under workflows/combined/)" >&2
+  exit 1
+fi
+cat >"$OPENEVOLVE_REPLACEMENT_TARGET_DIR/openevolve_replacement.h" <<'EOF'
+#ifndef REPLACEMENT_OPENEVOLVE_REPLACEMENT_H
+#define REPLACEMENT_OPENEVOLVE_REPLACEMENT_H
+
+#include "../../../../openevolve-components/openevolve_replacement.h"
+
+#endif
+EOF
+
+cat >"$OPENEVOLVE_REPLACEMENT_TARGET_DIR/openevolve_replacement.cc" <<'EOF'
+#include "../../../../openevolve-components/initial_replacement.cc"
 EOF
 
 echo "Bootstrapping vcpkg..."

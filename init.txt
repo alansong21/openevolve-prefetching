@@ -1,0 +1,12 @@
+Next steps:
+1. Activate your environment:
+   source "/users/varuncg/miniforge3/bin/activate" "oe311"
+
+2. Run OpenEvolve (example):
+   python3 openevolve/openevolve-run.py \
+     examples/function_minimization/initial_program.py \
+     examples/function_minimization/evaluator.py \
+     --config examples/function_minimization/config.yaml
+
+3. Project directory:
+   /users/varuncg/alphaEvolveProject

@@ -1,0 +1,192 @@
+max_iterations: 5
+checkpoint_interval: 1
+language: cpp
+file_suffix: ".cc"
+max_code_length: 200000
+
+evaluator:
+  timeout: 2147483647
+  parallel_evaluations: 1
+  cascade_evaluation: false
+  use_llm_feedback: true
+
+llm:
+  api_base: "https://api.openai.com/v1"
+  models:
+    - name: "gpt-4o"
+      weight: 1.0
+  evaluator_models:
+    - name: "gpt-4o-mini"
+      weight: 1.0
+  retries: 5
+  retry_delay: 5
+  temperature: 0.4
+  max_tokens: 12000
+  timeout: 120
+
+prompt:
+  system_message: |
+    =====================
+    PROBLEM OVERVIEW
+    =====================
+    You are co-evolving a ChampSim L2 cache PREFETCHER and a ChampSim L2 cache
+    REPLACEMENT POLICY together to maximise IPC. Both implementations live in the
+    SAME source file separated by split markers; the evaluator splits the file
+    back into two ChampSim modules before building.
+
+    File layout (do not move or remove the markers, do not introduce extras):
+
+      // === OPENEVOLVE_PREFETCHER_BEGIN ===
+      // ... `openevolve_prefetcher` member functions live here ...
+      // === OPENEVOLVE_PREFETCHER_END ===
+
+      // === OPENEVOLVE_REPLACEMENT_BEGIN ===
+      // ... `openevolve_replacement` member functions live here ...
+      // === OPENEVOLVE_REPLACEMENT_END ===
+
+    Each section becomes an independent .cc translation unit:
+      • The PREFETCHER section MUST `#include "openevolve_prefetcher.h"` and
+        define every member of class `openevolve_prefetcher` declared in that
+        header (`prefetcher_initialize`, `prefetcher_cache_operate`,
+        `prefetcher_cache_fill`, `prefetcher_cycle_operate`).
+      • The REPLACEMENT section MUST `#include "openevolve_replacement.h"` and
+        define every member of class `openevolve_replacement` declared in that
+        header (constructors, `find_victim`,
+        `replacement_cache_fill`, `update_replacement_state`).
+      • The two sections share NOTHING at compile time: no shared globals,
+        helpers, or `using` directives. Anonymous namespaces in one section
+        are invisible to the other.
+      • Both sections are wrapped in OpenEvolve `// EVOLVE-BLOCK-START` /
+        `// EVOLVE-BLOCK-END` markers; mutate code inside those blocks only.
+
+    =====================
+    EVALUATION CRITERIA
+    =====================
+    Optimization goal:
+      • Maximise the IPC reported by ChampSim across the configured traces.
+      • The replacement policy and prefetcher are scored jointly. Prefer
+        coordinated changes (e.g. prefetched fills tagged with low priority and
+        the replacement noticing prefetch metadata, or stride confidence used
+        to gate insertion priority).
+
+    Correctness & safety:
+      • The split file must compile cleanly — both halves independently.
+      • No dynamic allocation in the hot path; keep state bounded.
+      • No file I/O, logging, exceptions, or mutation of architecture state.
+
+    Success signal:
+      • Combined IPC measured by the ChampSim evaluator strictly exceeds the
+        baseline (next-line + LRU). Aggressive prefetching must justify its
+        bandwidth and the replacement policy must justify any sample sets or
+        prediction tables it adds.
+
+    =====================
+    PREFETCHER API (L2C hook)
+    =====================
+        void prefetcher_initialize();
+        uint32_t prefetcher_cache_operate(champsim::address addr,
+                                          champsim::address ip,
+                                          uint8_t cache_hit,
+                                          bool useful_prefetch,
+                                          access_type type,
+                                          uint32_t metadata_in);
+        uint32_t prefetcher_cache_fill(champsim::address addr,
+                                       long set, long way,
+                                       uint8_t prefetch,
+                                       champsim::address evicted_addr,
+                                       uint32_t metadata_in);
+        void prefetcher_cycle_operate();
+
+      • Issue requests with
+        `prefetch_line(champsim::address target, bool fill_this_level, uint32_t metadata)`.
+        The metadata round-trips back as `metadata_in` on cache_operate / fill.
+      • `access_type` values: LOAD, RFO, PREFETCH, WRITE, TRANSLATION.
+      • Convert addresses with `champsim::block_number block{addr};` and
+        `block.to<int64_t>()`. Never touch private `.value`/`.data`. Never
+        store ChampSim address slices in `std::unordered_map` keys without a
+        custom hash (use raw `uint64_t` tags instead).
+
+    =====================
+    REPLACEMENT API (L2C hook)
+    =====================
+        explicit openevolve_replacement(CACHE* cache);
+        openevolve_replacement(CACHE* cache, long sets, long ways);
+
+        long find_victim(uint32_t triggering_cpu, uint64_t instr_id, long set,
+                         const champsim::cache_block* current_set,
+                         champsim::address ip,
+                         champsim::address full_addr,
+                         access_type type);
+        void replacement_cache_fill(uint32_t triggering_cpu, long set, long way,
+                                    champsim::address full_addr,
+                                    champsim::address ip,
+                                    champsim::address victim_addr,
+                                    access_type type);
+        void update_replacement_state(uint32_t triggering_cpu, long set, long way,
+                                      champsim::address full_addr,
+                                      champsim::address ip,
+                                      champsim::address victim_addr,
+                                      access_type type, uint8_t hit);
+
+      • `find_victim` must return a way index in `[0, NUM_WAY)` for the given
+        `set`. Returning out-of-range indices crashes the simulator.
+      • `cache->NUM_SET` and `cache->NUM_WAY` are available through the
+        delegating constructor (see the LRU baseline). Build per-set helper
+        structures keyed by `set * NUM_WAY + way`.
+      • `update_replacement_state` runs on every hit AND on every fill (with
+        `hit==0` for fills). `replacement_cache_fill` runs on fills only and
+        is the right place to insert a new line at a chosen RRPV / priority.
+      • `access_type::WRITE` is a writeback; many policies skip recency updates
+        on writes.
+
+    =====================
+    HARD CONSTRAINTS (DO NOT VIOLATE)
+    =====================
+      • Keep all OpenEvolve markers and split markers verbatim. Do not insert
+        prose or markdown anywhere outside SEARCH/REPLACE blocks.
+      • Both halves must include the right header (`openevolve_prefetcher.h`
+        for the prefetcher half, `openevolve_replacement.h` for the
+        replacement half). Including the wrong header in a section is a hard
+        compile error.
+      • Do not redefine the prefetcher or replacement classes in the .cc
+        sections. Only implement the member functions declared in the headers.
+      • Keep added state to a few KB total per module.
+
+    =====================
+    RESPONSE FORMAT (STRICT)
+    =====================
+    - Respond ONLY with one or more SEARCH/REPLACE diff blocks in the exact
+      format:
+
+        <<<<<<< SEARCH
+        (exact code to find)
+        =======
+        (exact replacement code)
+        >>>>>>> REPLACE
+
+    - No prose, no markdown fences, no commentary outside diff blocks.
+    - Each SEARCH block must match the current file byte-for-byte.
+    - Do NOT include the split markers inside SEARCH blocks unless absolutely
+      required to disambiguate; if you do include them, copy them verbatim.
+
+    =====================
+    SELF-CHECK BEFORE RESPONDING
+    =====================
+    Before emitting the diff, verify:
+      • Both halves still compile as standalone .cc files after the patch.
+      • You have NOT moved code across the split markers.
+      • You have NOT introduced shared globals between sections.
+      • Prefetcher member signatures and replacement member signatures match
+        the headers exactly.
+      • Output contains ONLY SEARCH/REPLACE blocks.
+  include_artifacts: true
+  max_artifact_bytes: 40960
+
+database[q]:
+  population_size: 12
+  archive_size: 6
+  num_islands: 1
+  exploration_ratio: 0.4
+  exploitation_ratio: 0.6
+  elite_selection_ratio: 0.1
+  log_prompts: true

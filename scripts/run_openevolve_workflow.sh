@@ -11,10 +11,13 @@ context_bundle=""
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/run_openevolve_workflow.sh [--workflow champsim|cbp-ng] [--iterations N] [--initial-program PATH] [--context-bundle NAME]
+Usage: scripts/run_openevolve_workflow.sh [--workflow champsim|cbp-ng|combined] [--iterations N] [--initial-program PATH] [--context-bundle NAME]
 
 Options:
   -w, --workflow NAME      Workflow to run (default: champsim)
+                             champsim  - solo L2C prefetcher evolution
+                             cbp-ng    - CBP-NG branch predictor workflow
+                             combined  - joint L2C prefetcher + replacement evolution
   -i, --iterations N       Number of iterations (default: 5)
   -p, --initial-program P  Initial program path override
   -c, --context-bundle N   Explicit context bundle (default: workflow-specific)
@@ -74,8 +77,16 @@ case "$workflow" in
     config="$REPO_ROOT/workflows/cbp_ng/config.yaml"
     target_initial="$REPO_ROOT/workflows/cbp_ng/initial_program.hpp"
     ;;
+  combined)
+    workflow_env="combined"
+    default_context_bundle="champsim"
+    default_initial="$REPO_ROOT/workflows/combined/initial_program.cc"
+    evaluator="$REPO_ROOT/workflows/combined/evaluator.py"
+    config="$REPO_ROOT/workflows/combined/config.yaml"
+    target_initial="$REPO_ROOT/workflows/combined/initial_program.cc"
+    ;;
   *)
-    echo "Error: --workflow must be champsim or cbp-ng" >&2
+    echo "Error: --workflow must be champsim, cbp-ng, or combined" >&2
     exit 2
     ;;
 esac
@@ -102,7 +113,12 @@ if [[ ! -f "$initial_src" ]]; then
   exit 1
 fi
 
-cp "$initial_src" "$target_initial"
+# When the user did not override --initial-program, source and target may be
+# the same file (the workflow's canonical starting point). Skip the copy in
+# that case to avoid `cp: same file` errors.
+if [[ "$(readlink -f "$initial_src")" != "$(readlink -f "$target_initial")" ]]; then
+  cp "$initial_src" "$target_initial"
+fi
 
 run_id="$(date +%Y%m%d_%H%M%S)_$(python3 - <<'PY'
 import uuid

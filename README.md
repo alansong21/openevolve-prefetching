@@ -45,6 +45,27 @@ This repository wires OpenEvolve into the ChampSim simulator so evolution edits 
   ```
 - Each iteration overwrites `openevolve-components/initial_program.cc`, rebuilds `ChampSim`, runs the configured traces, and reports IPC as the score. Logs and artifacts land under `openevolve-components/openevolve_output/`.
 
+## Joint prefetcher + replacement workflow
+- Co-evolve the L2C prefetcher and the L2C replacement policy in a single
+  source file (split markers tell the evaluator how to break it back into two
+  ChampSim modules). See `workflows/combined/README.md` for the full layout.
+- Run it directly:
+  ```bash
+  python openevolve/openevolve-run.py \
+    workflows/combined/initial_program.cc \
+    workflows/combined/evaluator.py \
+    --config workflows/combined/config.yaml \
+    --iterations 5
+  ```
+- Or via the unified launcher:
+  ```bash
+  ./scripts/run_openevolve_workflow.sh --workflow combined --iterations 5
+  ```
+- The combined evaluator reuses the solo evaluator's build/run pipeline (no
+  duplicated logic) by importing it under a sandboxed module name and patching
+  only the candidate-prep / build-invalidation hooks, so the solo prefetcher
+  workflow above keeps working unchanged.
+
 ## CBP-NG workflow
 - Download CBP-NG traces:
   ```bash
