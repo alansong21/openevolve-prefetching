@@ -6,6 +6,7 @@ DEST_DIR="${CBPNG_TRACE_DIR:-$ROOT_DIR/traces/cbp-ng}"
 ARCHIVE_PATH="$DEST_DIR/cbp-ng_training_traces.tar.gz"
 EXTRACTED_DIR="$DEST_DIR/cbp-ng_training_traces"
 TRACE_URL="https://drive.google.com/file/d/1kLKn_iKVBP-YxRpC4WiCy-ca-agU0BFG/view"
+TRACE_ID="1kLKn_iKVBP-YxRpC4WiCy-ca-agU0BFG"
 
 ensure_gdown() {
   if ! command -v gdown >/dev/null 2>&1; then
@@ -26,7 +27,7 @@ main() {
 
   if [[ ! -f "$ARCHIVE_PATH" ]]; then
     echo "Downloading CBP-NG training traces archive..."
-    gdown --fuzzy "$TRACE_URL" -O "$ARCHIVE_PATH"
+    gdown "$TRACE_ID" -O "$ARCHIVE_PATH"
   else
     echo "Archive already exists: $ARCHIVE_PATH"
   fi
