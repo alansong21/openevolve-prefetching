@@ -50,6 +50,10 @@ ensure_compiler() {
 
 ensure_toolchain_wrapper() {
   mkdir -p "$TOOLCHAIN_BIN_DIR"
+  cat >"$TOOLCHAIN_BIN_DIR/g++" <<'EOF'
+#!/usr/bin/env bash
+exec g++-12 "$@"
+EOF
   chmod +x "$TOOLCHAIN_BIN_DIR/g++"
   echo "Configured toolchain wrapper: $TOOLCHAIN_BIN_DIR/g++"
 }

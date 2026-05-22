@@ -9,9 +9,14 @@ TRACE_URL="https://drive.google.com/file/d/1kLKn_iKVBP-YxRpC4WiCy-ca-agU0BFG/vie
 
 ensure_gdown() {
   if ! command -v gdown >/dev/null 2>&1; then
-    echo "gdown not found; installing with pip..."
-    python3 -m pip install --user gdown
-    export PATH="$HOME/.local/bin:$PATH"
+    if [[ -n "${VIRTUAL_ENV:-}" ]]; then
+      echo "gdown not found; installing into active virtualenv..."
+      python3 -m pip install gdown
+    else
+      echo "gdown not found; installing with pip..."
+      python3 -m pip install --user gdown
+      export PATH="$HOME/.local/bin:$PATH"
+    fi
   fi
 }
 

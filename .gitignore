@@ -51,3 +51,4 @@ champsim_prefetcher/openevolve_output/*
 *.swp
 *.swo
 .DS_Store
+.trace/
