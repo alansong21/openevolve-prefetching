@@ -71,14 +71,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output",
-        default="plots/ipc_percent_improvement.png",
-        help="Horizontal plot output PNG file path.",
+        default="plots/ipc_percent_improvement.pdf",
+        help="Horizontal plot output PDF file path.",
     )
     parser.add_argument(
         "--vertical-output",
         default=None,
         help=(
-            "Vertical plot output PNG file path. "
+            "Vertical plot output PDF file path. "
             "Default: same as --output with '_vertical' suffix."
         ),
     )
@@ -86,7 +86,7 @@ def parse_args() -> argparse.Namespace:
         "--side-by-side-output",
         default=None,
         help=(
-            "Side-by-side IPC comparison output PNG file path. "
+            "Side-by-side IPC comparison output PDF file path. "
             "Default: same as --output with '_side_by_side' suffix."
         ),
     )
@@ -94,7 +94,7 @@ def parse_args() -> argparse.Namespace:
         "--mean-output",
         default=None,
         help=(
-            "Mean IPC comparison output PNG file path. "
+            "Mean IPC comparison output PDF file path. "
             "Default: same as --output with '_mean' suffix."
         ),
     )
@@ -176,7 +176,7 @@ def main() -> None:
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig_h.tight_layout()
-    fig_h.savefig(output_path, dpi=200)
+    fig_h.savefig(output_path, format="pdf", bbox_inches="tight")
     print(f"Saved horizontal plot to {output_path}")
 
     vertical_output = (
@@ -229,7 +229,7 @@ def main() -> None:
         )
 
     fig_v.tight_layout()
-    fig_v.savefig(vertical_output, dpi=200)
+    fig_v.savefig(vertical_output, format="pdf", bbox_inches="tight")
     print(f"Saved vertical plot to {vertical_output}")
 
     side_by_side_output = (
@@ -315,7 +315,7 @@ def main() -> None:
         )
 
     fig_s.tight_layout()
-    fig_s.savefig(side_by_side_output, dpi=200)
+    fig_s.savefig(side_by_side_output, format="pdf", bbox_inches="tight")
     print(f"Saved side-by-side IPC plot to {side_by_side_output}")
 
     mean_output = Path(args.mean_output) if args.mean_output else default_mean_output(output_path)
@@ -340,7 +340,7 @@ def main() -> None:
         )
 
     fig_m.tight_layout()
-    fig_m.savefig(mean_output, dpi=200)
+    fig_m.savefig(mean_output, format="pdf", bbox_inches="tight")
     print(f"Saved mean IPC plot to {mean_output}")
 
     if args.show:
