@@ -21,3 +21,21 @@ tqdm==4.67.1
 typing-inspection==0.4.2
 typing_extensions==4.15.0
 dacite==1.9.2
+# Stage-B hyperparameter tuning of evolved programs (see vizier_tuning/).
+# Google Vizier + the JAX stack that backs its GP-Bandit ("DEFAULT") algorithm.
+#
+# NOTE: we deliberately do NOT use the `google-vizier[jax]` extra. That extra
+# hard-pins `equinox==0.11.7`, which calls `jax.core.Primitive` — removed in
+# JAX 0.6.0 — while flax/orbax now require jax>=0.6. We instead install the core
+# package and pin a coherent JAX stack (equinox>=0.12) that works with jax 0.6.
+google-vizier==0.1.24
+jax==0.6.2
+jaxlib==0.6.2
+equinox==0.13.8
+flax==0.10.7
+optax==0.2.8
+chex==0.1.90
+jaxopt==0.8.5
+jaxtyping==0.3.7
+typeguard==2.13.3
+tfp-nightly[jax]

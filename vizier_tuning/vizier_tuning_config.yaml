@@ -1,0 +1,28 @@
+# Default configuration for the Vizier hyperparameter tuning stage.
+# Override any field on the CLI (e.g. --trials) or via env (VIZIER_TRIALS, etc).
+
+# --- Vizier study -----------------------------------------------------------
+num_trials: 50          # total number of hyperparameter configurations to try
+batch_size: 1           # >1 is UNSAFE: the ChampSim evaluators build in-place
+algorithm: "DEFAULT"    # Vizier GP-Bandit (recommended default)
+metric_name: "combined_score"
+metric_fallback: "ipc"  # used if the evaluator omits combined_score
+owner: "openevolve"
+seed_current_values: true   # evaluate the evolved baseline as an anchor
+failure_score: 0.0          # score reported for builds that fail / 0 IPC
+
+# --- Stage A: hyperparameter identification (LLM) ---------------------------
+max_parameters: 12          # cap the search-space dimensionality
+identifier_model: null      # null -> reuse the workflow's primary evolution model
+identifier_temperature: 0.0
+identifier_max_tokens: 16000
+baseline_sanity_build: true # render+evaluate current values before searching
+
+# --- Search-space fallback bounds -------------------------------------------
+# Used only when the identifier LLM omits a numeric range. Bounds are factors
+# multiplied against the parameter's current value.
+search_space_defaults:
+  int_min_factor: 0.25
+  int_max_factor: 4.0
+  float_min_factor: 0.25
+  float_max_factor: 4.0

@@ -84,6 +84,41 @@ This repository wires OpenEvolve into the ChampSim simulator so evolution edits 
   ./scripts/run_openevolve_workflow.sh --workflow cbp-ng --iterations 5
   ```
 
+## Vizier hyperparameter tuning (post-evolution)
+- After an evolution run, a second stage can tune the numeric/categorical
+  constants *inside* the evolved program with
+  [Google Vizier](https://github.com/google/vizier), reusing the **same
+  evaluator** (so the objective is identical: ChampSim `combined_score`/IPC).
+- The hyperparameters are discovered automatically by a single LLM call (reusing
+  the workflow's existing LLM config + `OPENAI_API_KEY`), which rewrites the
+  source into a `{{HP_name}}` placeholder template; each Vizier trial renders the
+  template, runs the evaluator, and reports the score back.
+- Vizier is a normal pip dependency (already pinned in `requirements.txt`,
+  along with a coherent JAX stack for its GP-Bandit algorithm):
+  ```bash
+  pip install -r requirements.txt
+  ```
+- Run it standalone against a workflow's best evolved program:
+  ```bash
+  python -m vizier_tuning.run_vizier_tuning --workflow champsim --trials 50
+  # or: ./scripts/run_vizier_tuning.sh --workflow champsim --trials 50
+  ```
+- Or chain it right after evolution:
+  ```bash
+  ./scripts/run_openevolve_workflow.sh --workflow champsim --iterations 5 \
+    --with-vizier --vizier-trials 50
+  ```
+- Inspect what would be tuned without running a search (Stage A only):
+  ```bash
+  python -m vizier_tuning.run_vizier_tuning --workflow champsim --dry-run
+  ```
+- Outputs land under `<workflow openevolve_output>/vizier/<run_id>/`:
+  `best_tuned_program.*`, `best_params.json`, `trials.jsonl`, plus the Stage-A
+  `templated_source.txt` / `param_spec.json`. The evolved `best_program` is never
+  overwritten in place.
+- Knobs live in `vizier_tuning/vizier_tuning_config.yaml`; see
+  `docs/vizier_integration_design.md` for the full design.
+
 ## Useful notes
 - The ChampSim module `ChampSim/prefetcher/openevolve_prefetcher` is a two-line shim that includes the shared sources under `openevolve-components/`, keeping the submodule clean.
 - Update the trace list by editing `TRACES` in `openevolve-components/evaluator.py`. Other knobs (jobs, timeouts, instruction counts) are documented in `openevolve-components/README.md`.

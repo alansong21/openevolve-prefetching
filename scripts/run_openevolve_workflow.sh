@@ -8,10 +8,12 @@ workflow="champsim"
 iterations=5
 initial_src=""
 context_bundle=""
+with_vizier=0
+vizier_trials=""
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/run_openevolve_workflow.sh [--workflow champsim|cbp-ng|combined] [--iterations N] [--initial-program PATH] [--context-bundle NAME]
+Usage: scripts/run_openevolve_workflow.sh [--workflow champsim|cbp-ng|combined] [--iterations N] [--initial-program PATH] [--context-bundle NAME] [--with-vizier] [--vizier-trials N]
 
 Options:
   -w, --workflow NAME      Workflow to run (default: champsim)
@@ -21,6 +23,9 @@ Options:
   -i, --iterations N       Number of iterations (default: 5)
   -p, --initial-program P  Initial program path override
   -c, --context-bundle N   Explicit context bundle (default: workflow-specific)
+      --with-vizier        After evolution, run the Vizier hyperparameter tuning
+                           stage on the evolved best program (Stage A + B).
+      --vizier-trials N    Number of Vizier trials when --with-vizier is set.
   -h, --help               Show this help
 USAGE
 }
@@ -41,6 +46,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     -c|--context-bundle)
       context_bundle="${2:-}"
+      shift 2
+      ;;
+    --with-vizier)
+      with_vizier=1
+      shift
+      ;;
+    --vizier-trials)
+      vizier_trials="${2:-}"
       shift 2
       ;;
     -h|--help)
@@ -138,3 +151,12 @@ python3 "$REPO_ROOT/openevolve/openevolve-run.py" \
   "$evaluator" \
   --config "$config" \
   --iterations "$iterations"
+
+if [[ "$with_vizier" -eq 1 ]]; then
+  echo "Evolution finished; starting Vizier hyperparameter tuning stage..."
+  vizier_cmd=(python3 -m vizier_tuning.run_vizier_tuning --workflow "$workflow" --run-id "$run_id")
+  if [[ -n "$vizier_trials" ]]; then
+    vizier_cmd+=(--trials "$vizier_trials")
+  fi
+  ( cd "$REPO_ROOT" && "${vizier_cmd[@]}" )
+fi
