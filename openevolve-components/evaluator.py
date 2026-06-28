@@ -15,6 +15,8 @@ import select
 
 from openevolve.evaluation_result import EvaluationResult
 
+from champsim_stats import parse_stats
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CHAMPSIM_ROOT = REPO_ROOT / "ChampSim"
 PREFETCHER_CC = Path(__file__).with_name("initial_program.cc")
@@ -31,6 +33,13 @@ SIM_TIMEOUT = int(os.environ.get("CHAMPSIM_TIMEOUT", 0))
 BUILD_TIMEOUT = int(os.environ.get("CHAMPSIM_BUILD_TIMEOUT", 600))
 MAKE_JOBS = int(os.environ.get("CHAMPSIM_JOBS", max(1, os.cpu_count() or 1)))
 TRACE_ITERATIONS = max(1, int(os.environ.get("CHAMPSIM_TRACE_ITERATIONS", 1)))
+ENABLE_MISS_LOG = os.environ.get("CHAMPSIM_MISS_LOG", "true").lower() in ("1", "true", "yes", "on")
+BASELINE_ROOT = Path(
+    os.environ.get(
+        "CHAMPSIM_BASELINE_ROOT",
+        REPO_ROOT / "workflows" / "combined" / "baseline",
+    )
+)
 IPC_PATTERN = re.compile(r"cumulative IPC:\s+([0-9.]+)")
 STREAM_LOGS = os.environ.get("CHAMPSIM_STREAM_LOGS", "true").lower() in ("1", "true", "yes", "on")
 CONSOLE_LOG_LIMIT = int(os.environ.get("CHAMPSIM_CONSOLE_LOG_LIMIT", 4000))
@@ -224,10 +233,25 @@ def _invalidate_prefetcher_object() -> None:
 
 
 def _parse_ipc(stdout: str) -> float:
-    matches = IPC_PATTERN.findall(stdout)
-    if not matches:
-        raise ValueError("Could not find cumulative IPC in ChampSim output")
-    return float(matches[-1])
+    return parse_stats(stdout).ipc
+
+
+def _baseline_artifact_paths(trace: Path) -> dict[str, str]:
+    """Return baseline artifact paths for a trace when they exist."""
+
+    trace_key = trace.stem
+    baseline_dir = BASELINE_ROOT / trace_key
+    artifacts: dict[str, str] = {}
+    miss_log = baseline_dir / "misses.txt"
+    stats_json = baseline_dir / "stats.json"
+    profile_json = REPO_ROOT / "workflows" / "combined" / "profiles" / f"{trace_key}.json"
+    if miss_log.exists():
+        artifacts["baseline_miss_log_path"] = str(miss_log)
+    if stats_json.exists():
+        artifacts["baseline_stats_path"] = str(stats_json)
+    if profile_json.exists():
+        artifacts["workload_profile_path"] = str(profile_json)
+    return artifacts
 
 
 def _build_champsim() -> Tuple[str, float]:
@@ -236,19 +260,19 @@ def _build_champsim() -> Tuple[str, float]:
 
 
 def _run_champsim(
-    trace: Path, log_path: Path | None, iteration: int | None = None
-) -> Tuple[str, float, Path, Path | None]:
+    trace: Path,
+    log_path: Path | None,
+    iteration: int | None = None,
+    miss_log_path: Path | None = None,
+) -> Tuple[str, float, Path, Path | None, Path | None]:
     """Run ChampSim with the specified trace file.
-    
-    Args:
-        trace: Path to the trace file to use for simulation
-        
+
     Returns:
-        Tuple of (stdout output, execution time in seconds, trace path)
+        Tuple of (stdout, execution time, trace path, log path, miss log path)
     """
     if not CHAMPSIM_BIN.exists():
         raise FileNotFoundError("ChampSim binary missing. Did the build succeed?")
-    
+
     if not trace.exists():
         raise FileNotFoundError(f"Trace file not found at {trace}")
 
@@ -258,14 +282,19 @@ def _run_champsim(
         str(WARMUP_INSTRUCTIONS),
         "--simulation-instructions",
         str(SIM_INSTRUCTIONS),
-        str(trace),
     ]
-    # Use trace name in the label for better identification in logs
+    if miss_log_path is not None:
+        miss_log_path.parent.mkdir(parents=True, exist_ok=True)
+        cmd.extend(["--miss-log", str(miss_log_path)])
+    cmd.append(str(trace))
+
     if iteration is None:
         label = f"ChampSim run ({trace.name})"
     else:
         label = f"ChampSim run ({trace.name}, iter {iteration})"
     _append_log(log_path, f"[{label}] starting\n")
+    if miss_log_path is not None:
+        _append_log(log_path, f"[{label}] miss_log={miss_log_path}\n")
     stdout, exec_time = _execute_with_stream(
         cmd,
         cwd=CHAMPSIM_ROOT,
@@ -273,7 +302,7 @@ def _run_champsim(
         label=label,
         log_path=log_path,
     )
-    return stdout, exec_time, trace, log_path
+    return stdout, exec_time, trace, log_path, miss_log_path
 
 
 def _failure_result(message: str, **artifacts) -> EvaluationResult:
@@ -390,7 +419,9 @@ def evaluate(program_path: str) -> EvaluationResult:
             "ipcs": [],
             "sim_times": [],
             "stdouts": [],
+            "parsed_stats": [],
             "log_path": str(run_log_dir / f"{trace.name}.log"),
+            "miss_log_path": str(run_log_dir / f"{trace.stem}.misses.txt"),
             "heartbeat_logs": [],
         }
         for trace in traces
@@ -405,6 +436,7 @@ def evaluate(program_path: str) -> EvaluationResult:
                         trace,
                         run_log_dir / f"{trace.name}.log",
                         iteration,
+                        run_log_dir / f"{trace.stem}.misses.txt" if ENABLE_MISS_LOG else None,
                     ): trace
                     for trace in traces
                 }
@@ -423,8 +455,9 @@ def evaluate(program_path: str) -> EvaluationResult:
 
                 concurrent.futures.wait(future_to_trace)
                 for future, trace in future_to_trace.items():
-                    sim_stdout, sim_time, trace_path, trace_log_path = future.result()
-                    ipc = _parse_ipc(sim_stdout)
+                    sim_stdout, sim_time, trace_path, trace_log_path, miss_log_path = future.result()
+                    champsim_stats = parse_stats(sim_stdout)
+                    ipc = champsim_stats.ipc
                     _print_console_log(f"ChampSim run ({trace_path.name})", sim_stdout)
                     heartbeat_log = ""
                     if trace_log_path and trace_log_path.exists():
@@ -434,6 +467,9 @@ def evaluate(program_path: str) -> EvaluationResult:
                     run["ipcs"].append(ipc)
                     run["sim_times"].append(sim_time)
                     run["stdouts"].append(sim_stdout)
+                    run["parsed_stats"].append(champsim_stats)
+                    if miss_log_path is not None:
+                        run["miss_log_path"] = str(miss_log_path)
                     run["heartbeat_logs"].append(heartbeat_log)
             
     except Exception as exc:  # pylint: disable=broad-except
@@ -451,9 +487,11 @@ def evaluate(program_path: str) -> EvaluationResult:
 
     trace_ipcs = []
     trace_sim_times = []
+    trace_parsed_stats = []
     all_traces = []
     all_stdouts = []
     all_log_paths = []
+    all_miss_log_paths = []
     all_heartbeat_logs = []
 
     for trace in traces:
@@ -461,9 +499,11 @@ def evaluate(program_path: str) -> EvaluationResult:
         avg_ipc = sum(run["ipcs"]) / len(run["ipcs"]) if run["ipcs"] else 0.0
         trace_ipcs.append(avg_ipc)
         trace_sim_times.append(max(run["sim_times"]) if run["sim_times"] else 0.0)
+        trace_parsed_stats.append(run["parsed_stats"][-1] if run["parsed_stats"] else None)
         all_traces.append(trace.name)
         all_stdouts.append(_join_iteration_logs(run["stdouts"]))
         all_log_paths.append(run["log_path"])
+        all_miss_log_paths.append(run.get("miss_log_path", ""))
         all_heartbeat_logs.append(_join_iteration_logs(run["heartbeat_logs"]))
 
     successful_ipcs = [ipc for ipc in trace_ipcs if ipc > 0]
@@ -475,37 +515,81 @@ def evaluate(program_path: str) -> EvaluationResult:
     # Create detailed artifacts for each trace
     trace_results = {}
     for i, trace_name in enumerate(all_traces):
+        parsed = trace_parsed_stats[i]
         trace_results[f"trace_{i+1}_name"] = trace_name
         trace_results[f"trace_{i+1}_ipc"] = trace_ipcs[i]
         trace_results[f"trace_{i+1}_log"] = _trim_log(all_stdouts[i])
         trace_results[f"trace_{i+1}_log_path"] = all_log_paths[i]
         trace_results[f"trace_{i+1}_heartbeat_log"] = _trim_log(all_heartbeat_logs[i])
-    
+        if all_miss_log_paths[i]:
+            trace_results[f"trace_{i+1}_miss_log_path"] = all_miss_log_paths[i]
+        if parsed is not None:
+            trace_results[f"trace_{i+1}_stats"] = parsed.to_dict()
+        trace_results.update(_baseline_artifact_paths(traces[i]))
+
     artifacts = {
         "build_log": _trim_log(build_stdout),
         "num_traces": len(traces),
         "successful_traces": len(successful_ipcs),
         "trace_iterations": TRACE_ITERATIONS,
-        "trace_results": trace_results
+        "trace_results": trace_results,
     }
-    
+
     metrics = {
-        "ipc": avg_ipc,  # Average IPC across all traces, or 0 if any trace fails
-        "combined_score": avg_ipc,  # Same as IPC for now
+        "ipc": avg_ipc,
+        "combined_score": avg_ipc,
         "build_time_s": build_time,
         "sim_time_s": sim_time,
         "wall_time_s": total_time,
         "traces_evaluated": len(traces),
         "successful_traces": len(successful_ipcs),
     }
-    
-    # Add individual trace IPCs to metrics
+
+    l2c_mpki_values = []
+    llc_mpki_values = []
+    l2c_pf_useful_total = 0
+    l2c_pf_useless_total = 0
+    l2c_pf_issued_total = 0
+
     for i, ipc in enumerate(trace_ipcs):
         metrics[f"trace_{i+1}_ipc"] = ipc
+        parsed = trace_parsed_stats[i]
+        if parsed is None:
+            continue
+        prefix = f"trace_{i+1}"
+        metrics[f"{prefix}_l2c_mpki"] = parsed.l2c.mpki(parsed.instructions) or 0.0
+        metrics[f"{prefix}_llc_mpki"] = parsed.llc.mpki(parsed.instructions) or 0.0
+        metrics[f"{prefix}_l2c_pf_useful"] = parsed.l2c.pf_useful
+        metrics[f"{prefix}_l2c_pf_useless"] = parsed.l2c.pf_useless
+        metrics[f"{prefix}_l2c_pf_issued"] = parsed.l2c.pf_issued
+        if parsed.l2c.avg_miss_latency_cycles is not None:
+            metrics[f"{prefix}_l2c_avg_miss_latency"] = parsed.l2c.avg_miss_latency_cycles
+        if parsed.llc.avg_miss_latency_cycles is not None:
+            metrics[f"{prefix}_llc_avg_miss_latency"] = parsed.llc.avg_miss_latency_cycles
+        l2c_mpki_values.append(metrics[f"{prefix}_l2c_mpki"])
+        llc_mpki_values.append(metrics[f"{prefix}_llc_mpki"])
+        l2c_pf_useful_total += parsed.l2c.pf_useful
+        l2c_pf_useless_total += parsed.l2c.pf_useless
+        l2c_pf_issued_total += parsed.l2c.pf_issued
+
+    if l2c_mpki_values:
+        metrics["l2c_mpki"] = sum(l2c_mpki_values) / len(l2c_mpki_values)
+    if llc_mpki_values:
+        metrics["llc_mpki"] = sum(llc_mpki_values) / len(llc_mpki_values)
+    metrics["l2c_pf_useful"] = l2c_pf_useful_total
+    metrics["l2c_pf_useless"] = l2c_pf_useless_total
+    metrics["l2c_pf_issued"] = l2c_pf_issued_total
+    pf_accuracy_denom = l2c_pf_useful_total + l2c_pf_useless_total
+    if pf_accuracy_denom > 0:
+        metrics["l2c_prefetch_accuracy"] = l2c_pf_useful_total / pf_accuracy_denom
 
     summary_lines = [
         "[ChampSim summary]",
         f"ipc={avg_ipc}",
+        f"l2c_mpki={metrics.get('l2c_mpki', 0.0)}",
+        f"llc_mpki={metrics.get('llc_mpki', 0.0)}",
+        f"l2c_pf_useful={l2c_pf_useful_total}",
+        f"l2c_pf_useless={l2c_pf_useless_total}",
         f"build_time_s={build_time}",
         f"sim_time_s={sim_time}",
         f"wall_time_s={total_time}",
@@ -515,6 +599,8 @@ def evaluate(program_path: str) -> EvaluationResult:
     for i, trace_name in enumerate(all_traces):
         summary_lines.append(f"trace_{i+1}_name={trace_name}")
         summary_lines.append(f"trace_{i+1}_ipc={trace_ipcs[i]}")
+        if all_miss_log_paths[i]:
+            summary_lines.append(f"trace_{i+1}_miss_log_path={all_miss_log_paths[i]}")
     summary_payload = "\n".join(summary_lines) + "\n"
     for log_path in trace_log_paths:
         _append_log(log_path, summary_payload)

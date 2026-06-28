@@ -9,7 +9,6 @@
 
 #include <array>
 #include <cstdint>
-#include <iostream>
 
 #include "openevolve_prefetcher.h"
 
@@ -143,17 +142,6 @@ void openevolve_prefetcher::prefetcher_initialize()
   num_misses = 0;
   mpkc = 0.0f;
   spec_nl = 0;
-
-  std::cout << "IPCP_AT_L2C_CONFIG" << std::endl
-            << "NUM_IP_TABLE_L1_ENTRIES " << kNumIpTableEntries << std::endl
-            << "NUM_GHB_ENTRIES " << kNumGhbEntries << std::endl
-            << "NUM_IP_INDEX_BITS " << kNumIpIndexBits << std::endl
-            << "NUM_IP_TAG_BITS " << kNumIpTagBits << std::endl
-            << "S_TYPE " << kStreamType << std::endl
-            << "CS_TYPE " << kConstStrideType << std::endl
-            << "CPLX_TYPE " << kComplexStrideType << std::endl
-            << "NL_TYPE " << kNextLineType << std::endl
-            << std::endl;
 }
 
 uint32_t openevolve_prefetcher::prefetcher_cache_operate(champsim::address address, champsim::address ip_addr, uint8_t cache_hit,

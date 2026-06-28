@@ -1,0 +1,327 @@
+diff --git a/openevolve/context_agent.py b/openevolve/context_agent.py
+index 98ecee8..c2c6347 100644
+--- a/openevolve/context_agent.py
++++ b/openevolve/context_agent.py
+@@ -4,11 +4,17 @@ Lightweight bridge for the optional LangChain code-context agent.
+ The goal is to keep the core evolution loop decoupled: if the agent or its
+ dependencies are missing, we simply return an empty context bundle and let the
+ loop proceed unchanged.
++
++For the combined workflow (OPENEVOLVE_WORKFLOW=combined), Phase 1 advisor
++insights replace the static header dump.
+ """
+ 
+ from __future__ import annotations
+ 
++import importlib.util
+ import logging
++import os
++from pathlib import Path
+ from typing import Any, Dict
+ 
+ logger = logging.getLogger(__name__)
+@@ -20,6 +26,8 @@ except Exception as exc:  # noqa: BLE001
+     _agent = None  # type: ignore
+     _import_error = exc
+ 
++_REPO_ROOT = Path(__file__).resolve().parents[2]
++
+ 
+ def _coerce_artifacts(artifacts: Dict[str, Any] | None, limit: int = 4000) -> str:
+     """Render artifacts to a short plaintext blob for the context query."""
+@@ -39,16 +47,57 @@ def _coerce_artifacts(artifacts: Dict[str, Any] | None, limit: int = 4000) -> st
+     return blob[:limit]
+ 
+ 
+-def fetch_context_from_agent(
++def _fetch_combined_insights(
+     task_description: str,
++    artifacts: Dict[str, Any] | None,
++    token_budget: int,
++) -> str:
++    insight_path = _REPO_ROOT / "workflows" / "combined" / "insight_service.py"
++    if not insight_path.is_file():
++        logger.debug("Combined insight service missing at %s", insight_path)
++        return ""
++
++    spec = importlib.util.spec_from_file_location("combined_insight_service", insight_path)
++    if spec is None or spec.loader is None:
++        return ""
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    build = getattr(module, "build_insight_bundle", None)
++    if build is None:
++        return ""
++    return build(task_description, artifacts, token_budget=token_budget)
++
++
++def _default_task_description() -> str:
++    workflow = os.environ.get("OPENEVOLVE_WORKFLOW", "").lower()
++    if workflow == "combined":
++        return "Co-evolve the L2C prefetcher and replacement policy to maximise IPC"
++    return "Evolve the openevolve L2C prefetcher (initial_program.cc) to improve IPC"
++
++
++def fetch_context_from_agent(
++    task_description: str | None = None,
+     artifacts: Dict[str, Any] | None = None,
+-    token_budget: int = 1200,
++    token_budget: int = 8000,
+ ) -> str:
+     """
+-    Ask the external LangChain agent for a compact codebase context bundle.
++    Return advisor context for the mutation LLM prompt.
+ 
+-    Returns an empty string if the agent is unavailable or an error occurs.
++    Combined workflow: workload + miss-log insight bundle (Phase 1).
++    Other workflows: programmatic/LangChain ChampSim header dump.
+     """
++    task_description = task_description or _default_task_description()
++    workflow = os.environ.get("OPENEVOLVE_WORKFLOW", "").lower()
++
++    if workflow == "combined":
++        try:
++            content = _fetch_combined_insights(task_description, artifacts, token_budget)
++            if content:
++                logger.info("Combined insight service supplied %d chars", len(content))
++                return content
++        except Exception as exc:  # noqa: BLE001
++            logger.warning("Combined insight service failed: %s", exc)
++
+     if _agent is None:
+         if _import_error:
+             logger.debug("Context agent unavailable: %s", _import_error)
+@@ -81,6 +130,4 @@ def fetch_context_from_agent(
+         logger.debug("Context agent returned empty content")
+         return ""
+ 
+-    # trimmed = content[:token_budget]
+-    # logger.debug("Context agent returned %d chars (trimmed to %d)", len(content), len(trimmed))
+     return content
+diff --git a/openevolve/iteration.py b/openevolve/iteration.py
+index 4db8d59..8d6e543 100644
+--- a/openevolve/iteration.py
++++ b/openevolve/iteration.py
+@@ -75,10 +75,7 @@ async def run_iteration_with_shared_db(
+         )
+ 
+         # Optionally enrich the prompt with agent-provided ChampSim context
+-        task_summary = "Evolve the openevolve L2C prefetcher (initial_program.cc) to improve IPC"
+-        agent_context = fetch_context_from_agent(
+-            task_description=task_summary, artifacts=parent_artifacts, token_budget=1200
+-        )
++        agent_context = fetch_context_from_agent(artifacts=parent_artifacts, token_budget=8000)
+         if agent_context:
+             prompt["user"] = (
+                 f"{prompt['user']}\n\n"
+@@ -89,33 +86,48 @@ async def run_iteration_with_shared_db(
+         result = Result(parent=parent)
+         iteration_start = time.time()
+ 
+-        # Generate code modification
+-        llm_response = await llm_ensemble.generate_with_context(
+-            system_message=prompt["system"],
+-            messages=[{"role": "user", "content": prompt["user"]}],
++        from openevolve.mutation_agent import try_agentic_mutation_async
++
++        mutation = await try_agentic_mutation_async(
++            parent_code=parent.code,
++            parent_artifacts=parent_artifacts,
++            parent_metrics=parent.metrics,
++            parent_id=parent.id,
++            llm_ensemble=llm_ensemble,
++            iteration=iteration,
++            diff_pattern=config.diff_pattern,
+         )
+ 
+-        # Parse the response
+-        if config.diff_based_evolution:
+-            diff_blocks = extract_diffs(llm_response, config.diff_pattern)
++        if mutation is not None:
++            child_code, llm_response, changes_summary = mutation
++        else:
++            # Generate code modification (single-LLM fallback)
++            llm_response = await llm_ensemble.generate_with_context(
++                system_message=prompt["system"],
++                messages=[{"role": "user", "content": prompt["user"]}],
++            )
+ 
+-            if not diff_blocks:
+-                logger.warning(f"Iteration {iteration+1}: No valid diffs found in response")
+-                return None
++            # Parse the response
++            if config.diff_based_evolution:
++                diff_blocks = extract_diffs(llm_response, config.diff_pattern)
+ 
+-            # Apply the diffs
+-            child_code = apply_diff(parent.code, llm_response, config.diff_pattern)
+-            changes_summary = format_diff_summary(diff_blocks)
+-        else:
+-            # Parse full rewrite
+-            new_code = parse_full_rewrite(llm_response, config.language)
++                if not diff_blocks:
++                    logger.warning(f"Iteration {iteration+1}: No valid diffs found in response")
++                    return None
+ 
+-            if not new_code:
+-                logger.warning(f"Iteration {iteration+1}: No valid code found in response")
+-                return None
++                # Apply the diffs
++                child_code = apply_diff(parent.code, llm_response, config.diff_pattern)
++                changes_summary = format_diff_summary(diff_blocks)
++            else:
++                # Parse full rewrite
++                new_code = parse_full_rewrite(llm_response, config.language)
+ 
+-            child_code = new_code
+-            changes_summary = "Full rewrite"
++                if not new_code:
++                    logger.warning(f"Iteration {iteration+1}: No valid code found in response")
++                    return None
++
++                child_code = new_code
++                changes_summary = "Full rewrite"
+ 
+         # Check code length
+         if len(child_code) > config.max_code_length:
+@@ -129,6 +141,15 @@ async def run_iteration_with_shared_db(
+         child_id = str(uuid.uuid4())
+         result.child_metrics = await evaluator.evaluate_program(child_code, child_id)
+ 
++        from openevolve.mutation_agent import record_orchestrator_evaluation_reward
++
++        record_orchestrator_evaluation_reward(
++            child_id=child_id,
++            parent_id=parent.id,
++            child_metrics=result.child_metrics,
++            parent_metrics=parent.metrics,
++        )
++
+         # Handle artifacts if they exist
+         artifacts = evaluator.get_pending_artifacts(child_id)
+ 
+diff --git a/openevolve/process_parallel.py b/openevolve/process_parallel.py
+index 559ab5b..cd47640 100644
+--- a/openevolve/process_parallel.py
++++ b/openevolve/process_parallel.py
+@@ -183,10 +183,7 @@ def _run_iteration_worker(
+             feature_dimensions=db_snapshot.get("feature_dimensions", []),
+         )
+ 
+-        task_summary = "Evolve the openevolve L2C prefetcher (initial_program.cc) to improve IPC"
+-        agent_context = fetch_context_from_agent(
+-            task_description=task_summary, artifacts=parent_artifacts, token_budget=1200
+-        )
++        agent_context = fetch_context_from_agent(artifacts=parent_artifacts, token_budget=8000)
+         if agent_context:
+             prompt["user"] = (
+                 f"{prompt['user']}\n\n"
+@@ -196,45 +193,60 @@ def _run_iteration_worker(
+ 
+         iteration_start = time.time()
+ 
+-        # Generate code modification (sync wrapper for async)
+-        try:
+-            llm_response = asyncio.run(
+-                _worker_llm_ensemble.generate_with_context(
+-                    system_message=prompt["system"],
+-                    messages=[{"role": "user", "content": prompt["user"]}],
++        from openevolve.mutation_agent import try_agentic_mutation_sync
++
++        mutation = try_agentic_mutation_sync(
++            parent_code=parent.code,
++            parent_artifacts=parent_artifacts,
++            parent_metrics=parent.metrics,
++            parent_id=parent.id,
++            llm_ensemble=_worker_llm_ensemble,
++            iteration=iteration,
++            diff_pattern=_worker_config.diff_pattern,
++        )
++
++        if mutation is not None:
++            child_code, llm_response, changes_summary = mutation
++        else:
++            # Generate code modification (sync wrapper for async)
++            try:
++                llm_response = asyncio.run(
++                    _worker_llm_ensemble.generate_with_context(
++                        system_message=prompt["system"],
++                        messages=[{"role": "user", "content": prompt["user"]}],
++                    )
+                 )
+-            )
+-        except Exception as e:
+-            logger.error(f"LLM generation failed: {e}")
+-            return SerializableResult(error=f"LLM generation failed: {str(e)}", iteration=iteration)
++            except Exception as e:
++                logger.error(f"LLM generation failed: {e}")
++                return SerializableResult(error=f"LLM generation failed: {str(e)}", iteration=iteration)
+ 
+-        # Check for None response
+-        if llm_response is None:
+-            return SerializableResult(error="LLM returned None response", iteration=iteration)
++            # Check for None response
++            if llm_response is None:
++                return SerializableResult(error="LLM returned None response", iteration=iteration)
+ 
+-        # Parse response based on evolution mode
+-        if _worker_config.diff_based_evolution:
+-            from openevolve.utils.code_utils import apply_diff, extract_diffs, format_diff_summary
++            # Parse response based on evolution mode
++            if _worker_config.diff_based_evolution:
++                from openevolve.utils.code_utils import apply_diff, extract_diffs, format_diff_summary
+ 
+-            diff_blocks = extract_diffs(llm_response, _worker_config.diff_pattern)
+-            if not diff_blocks:
+-                return SerializableResult(
+-                    error=f"No valid diffs found in response", iteration=iteration
+-                )
++                diff_blocks = extract_diffs(llm_response, _worker_config.diff_pattern)
++                if not diff_blocks:
++                    return SerializableResult(
++                        error=f"No valid diffs found in response", iteration=iteration
++                    )
+ 
+-            child_code = apply_diff(parent.code, llm_response, _worker_config.diff_pattern)
+-            changes_summary = format_diff_summary(diff_blocks)
+-        else:
+-            from openevolve.utils.code_utils import parse_full_rewrite
++                child_code = apply_diff(parent.code, llm_response, _worker_config.diff_pattern)
++                changes_summary = format_diff_summary(diff_blocks)
++            else:
++                from openevolve.utils.code_utils import parse_full_rewrite
+ 
+-            new_code = parse_full_rewrite(llm_response, _worker_config.language)
+-            if not new_code:
+-                return SerializableResult(
+-                    error=f"No valid code found in response", iteration=iteration
+-                )
++                new_code = parse_full_rewrite(llm_response, _worker_config.language)
++                if not new_code:
++                    return SerializableResult(
++                        error=f"No valid code found in response", iteration=iteration
++                    )
+ 
+-            child_code = new_code
+-            changes_summary = "Full rewrite"
++                child_code = new_code
++                changes_summary = "Full rewrite"
+ 
+         # Check code length
+         if len(child_code) > _worker_config.max_code_length:
+@@ -249,6 +261,15 @@ def _run_iteration_worker(
+         child_id = str(uuid.uuid4())
+         child_metrics = asyncio.run(_worker_evaluator.evaluate_program(child_code, child_id))
+ 
++        from openevolve.mutation_agent import record_orchestrator_evaluation_reward
++
++        record_orchestrator_evaluation_reward(
++            child_id=child_id,
++            parent_id=parent.id,
++            child_metrics=child_metrics,
++            parent_metrics=parent.metrics,
++        )
++
+         # Get artifacts
+         artifacts = _worker_evaluator.get_pending_artifacts(child_id)
+ 

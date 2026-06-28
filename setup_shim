@@ -89,12 +89,24 @@ update_submodules() {
 
 point_openevolve_to_fork() {
   local sub_dir="openevolve"
-  if [[ -d "$sub_dir/.git" ]]; then
+  if [[ -e "$sub_dir/.git" ]]; then
     log "Pointing openevolve submodule to fork: https://github.com/alansong21/openevolve.git"
     git -C "$sub_dir" remote set-url origin https://github.com/alansong21/openevolve.git
     git -C "$sub_dir" fetch origin
   else
     log "openevolve submodule not found; skipping remote update."
+  fi
+}
+
+apply_openevolve_local_patches() {
+  local shim_dir
+  shim_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  local patch_script="$shim_dir/scripts/apply_openevolve_local_patches.sh"
+  if [[ -x "$patch_script" ]]; then
+    log "Applying local OpenEvolve combined-workflow patches ..."
+    "$patch_script"
+  else
+    log "Patch script not found at $patch_script — skipping."
   fi
 }
 
@@ -134,6 +146,7 @@ main() {
   make_project_dir
   update_submodules
   point_openevolve_to_fork
+  apply_openevolve_local_patches
   build_champsim_deps
 
   log "✅ Setup complete!"

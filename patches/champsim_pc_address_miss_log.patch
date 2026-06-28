@@ -1,0 +1,189 @@
+diff --git a/inc/cache_stats.h b/inc/cache_stats.h
+index 6505202..3f3c885 100644
+--- a/inc/cache_stats.h
++++ b/inc/cache_stats.h
+@@ -5,10 +5,31 @@
+ #include <string>
+ #include <type_traits>
+ #include <utility>
++#include <vector>
+ 
+ #include "channel.h"
+ #include "event_counter.h"
+ 
++struct pc_address_key {
++  std::remove_cv_t<decltype(NUM_CPUS)> cpu{};
++  uint64_t pc{};
++  uint64_t address{};
++
++  bool operator<(const pc_address_key& other) const
++  {
++    if (cpu != other.cpu) {
++      return cpu < other.cpu;
++    }
++    if (pc != other.pc) {
++      return pc < other.pc;
++    }
++    return address < other.address;
++  }
++
++  bool operator==(const pc_address_key& other) const { return cpu == other.cpu && pc == other.pc && address == other.address; }
++  bool operator!=(const pc_address_key& other) const { return !(*this == other); }
++};
++
+ struct cache_stats {
+   std::string name;
+   // prefetch stats
+@@ -22,10 +43,15 @@ struct cache_stats {
+   champsim::stats::event_counter<std::pair<access_type, std::remove_cv_t<decltype(NUM_CPUS)>>> misses = {};
+   champsim::stats::event_counter<std::pair<access_type, std::remove_cv_t<decltype(NUM_CPUS)>>> mshr_merge = {};
+   champsim::stats::event_counter<std::pair<access_type, std::remove_cv_t<decltype(NUM_CPUS)>>> mshr_return = {};
++  champsim::stats::event_counter<pc_address_key> pc_address_misses = {};
+ 
+   long total_miss_latency_cycles{};
+ };
+ 
+ cache_stats operator-(cache_stats lhs, cache_stats rhs);
+ 
++bool pc_address_miss_logging_enabled();
++void configure_pc_address_miss_log(const std::string& output_path);
++void write_pc_address_miss_log(const std::vector<cache_stats>& stats);
++
+ #endif
+diff --git a/src/cache.cc b/src/cache.cc
+index 976d0c4..5261a1b 100644
+--- a/src/cache.cc
++++ b/src/cache.cc
+@@ -382,6 +382,11 @@ bool CACHE::handle_miss(const tag_lookup_type& handle_pkt)
+ 
+   sim_stats.misses.increment(std::pair{handle_pkt.type, handle_pkt.cpu});
+ 
++  if (!warmup && pc_address_miss_logging_enabled() && handle_pkt.type != access_type::PREFETCH) {
++    sim_stats.pc_address_misses.increment(
++        pc_address_key{handle_pkt.cpu, handle_pkt.ip.to<uint64_t>(), handle_pkt.address.to<uint64_t>()});
++  }
++
+   return true;
+ }
+ 
+@@ -399,6 +404,11 @@ bool CACHE::handle_write(const tag_lookup_type& handle_pkt)
+ 
+   sim_stats.misses.increment(std::pair{handle_pkt.type, handle_pkt.cpu});
+ 
++  if (!warmup && pc_address_miss_logging_enabled() && handle_pkt.type != access_type::PREFETCH) {
++    sim_stats.pc_address_misses.increment(
++        pc_address_key{handle_pkt.cpu, handle_pkt.ip.to<uint64_t>(), handle_pkt.address.to<uint64_t>()});
++  }
++
+   return true;
+ }
+ 
+@@ -886,6 +896,7 @@ void CACHE::end_phase(unsigned finished_cpu)
+   roi_stats.misses = sim_stats.misses;
+   roi_stats.mshr_merge = sim_stats.mshr_merge;
+   roi_stats.mshr_return = sim_stats.mshr_return;
++  roi_stats.pc_address_misses = sim_stats.pc_address_misses;
+ 
+   roi_stats.pf_requested = sim_stats.pf_requested;
+   roi_stats.pf_issued = sim_stats.pf_issued;
+diff --git a/src/cache_stats.cc b/src/cache_stats.cc
+index 0c47493..650199b 100644
+--- a/src/cache_stats.cc
++++ b/src/cache_stats.cc
+@@ -1,5 +1,34 @@
+ #include "cache_stats.h"
+ 
++#include <fstream>
++#include <string>
++
++namespace
++{
++std::string pc_address_miss_log_path;
++} // namespace
++
++bool pc_address_miss_logging_enabled() { return !pc_address_miss_log_path.empty(); }
++
++void configure_pc_address_miss_log(const std::string& output_path) { pc_address_miss_log_path = output_path; }
++
++void write_pc_address_miss_log(const std::vector<cache_stats>& stats)
++{
++  if (pc_address_miss_log_path.empty()) {
++    return;
++  }
++
++  std::ofstream log_file{pc_address_miss_log_path};
++  log_file << "cache cpu pc address misses\n";
++
++  for (const auto& cache_stat : stats) {
++    for (const auto& key : cache_stat.pc_address_misses.get_keys()) {
++      log_file << cache_stat.name << ' ' << key.cpu << ' ' << std::hex << "0x" << key.pc << ' ' << "0x" << key.address << std::dec << ' '
++               << cache_stat.pc_address_misses.at(key) << '\n';
++    }
++  }
++}
++
+ cache_stats operator-(cache_stats lhs, cache_stats rhs)
+ {
+   cache_stats result;
+@@ -11,6 +40,9 @@ cache_stats operator-(cache_stats lhs, cache_stats rhs)
+ 
+   result.hits = lhs.hits - rhs.hits;
+   result.misses = lhs.misses - rhs.misses;
++  result.mshr_merge = lhs.mshr_merge - rhs.mshr_merge;
++  result.mshr_return = lhs.mshr_return - rhs.mshr_return;
++  result.pc_address_misses = lhs.pc_address_misses - rhs.pc_address_misses;
+ 
+   result.total_miss_latency_cycles = lhs.total_miss_latency_cycles - rhs.total_miss_latency_cycles;
+   return result;
+diff --git a/src/main.cc b/src/main.cc
+index 84fa718..2beb238 100644
+--- a/src/main.cc
++++ b/src/main.cc
+@@ -23,6 +23,7 @@
+ #include <fmt/core.h>
+ 
+ #include "cache.h" // for CACHE
++#include "cache_stats.h"
+ #include "champsim.h"
+ #ifndef CHAMPSIM_TEST_BUILD
+ #include "core_inst.inc"
+@@ -82,6 +83,7 @@ int main(int argc, char** argv) // NOLINT(bugprone-exception-escape)
+   long long warmup_instructions = 0;
+   long long simulation_instructions = std::numeric_limits<long long>::max();
+   std::string json_file_name;
++  std::string miss_log_file_name;
+   std::vector<std::string> trace_names;
+   bool hide_heartbeat{false};
+   long long heartbeat_interval = 500000;
+@@ -100,10 +102,17 @@ int main(int argc, char** argv) // NOLINT(bugprone-exception-escape)
+   auto* json_option =
+       app.add_option("--json", json_file_name, "The name of the file to receive JSON output. If no name is specified, stdout will be used")->expected(0, 1);
+ 
++  auto* miss_log_option = app.add_option("--miss-log", miss_log_file_name,
++                                         "Write demand cache miss counts per (pc, address) pair to the given file during the simulation phase");
++
+   app.add_option("traces", trace_names, "The paths to the traces")->required()->expected(NUM_CPUS)->check(CLI::ExistingFile);
+ 
+   CLI11_PARSE(app, argc, argv);
+ 
++  if (miss_log_option->count() > 0) {
++    configure_pc_address_miss_log(miss_log_file_name);
++  }
++
+   g_env = &gen_environment;
+ 
+   for (O3_CPU& cpu : gen_environment.cpu_view()) {
+@@ -171,6 +180,13 @@ int main(int argc, char** argv) // NOLINT(bugprone-exception-escape)
+     }
+   }
+ 
++  for (const auto& phase_stat : phase_stats) {
++    if (phase_stat.name == "Simulation") {
++      write_pc_address_miss_log(phase_stat.roi_cache_stats);
++      break;
++    }
++  }
++
+   return 0;
+ }
+ #endif

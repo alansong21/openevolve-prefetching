@@ -46,6 +46,32 @@ cd ChampSim
 echo "Updating git submodules..."
 git submodule update --init
 
+apply_miss_log_patch() {
+  local patch_file="$SCRIPT_DIR/patches/champsim_pc_address_miss_log.patch"
+  local marker_file="inc/cache_stats.h"
+
+  if [[ ! -f "$patch_file" ]]; then
+    echo "Error: miss-log patch not found at $patch_file" >&2
+    exit 1
+  fi
+
+  if grep -q 'pc_address_miss_logging_enabled' "$marker_file" 2>/dev/null; then
+    echo "ChampSim miss-log instrumentation already present; skipping patch."
+    return 0
+  fi
+
+  echo "Applying ChampSim miss-log instrumentation patch..."
+  if ! patch -p1 --forward --dry-run --silent < "$patch_file"; then
+    echo "Error: miss-log patch does not apply cleanly to the current ChampSim tree." >&2
+    echo "       If you partially applied it, restore ChampSim core files and re-run setup." >&2
+    exit 1
+  fi
+  patch -p1 --forward --silent < "$patch_file"
+  echo "Miss-log patch applied (inc/cache_stats.h, src/cache_stats.cc, src/cache.cc, src/main.cc)."
+}
+
+apply_miss_log_patch
+
 echo "Syncing OpenEvolve prefetcher sources into ChampSim..."
 mkdir -p "$OPENEVOLVE_PREFETCHER_TARGET_DIR"
 if [[ ! -f "$OPENEVOLVE_SOURCE_DIR/openevolve_prefetcher.h" || ! -f "$OPENEVOLVE_SOURCE_DIR/initial_program.cc" ]]; then

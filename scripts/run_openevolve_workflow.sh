@@ -128,6 +128,10 @@ PY
 export OPENEVOLVE_RUN_ID="$run_id"
 export OPENEVOLVE_WORKFLOW="$workflow_env"
 export OPENEvolve_CONTEXT_BUNDLE="$context_bundle"
+if [[ "$workflow" == "combined" ]]; then
+  export OPENEVOLVE_AGENTIC_MUTATION="${OPENEVOLVE_AGENTIC_MUTATION:-true}"
+  export OPENEVOLVE_ORCHESTRATOR="${OPENEVOLVE_ORCHESTRATOR:-true}"
+fi
 
 echo "Workflow: $workflow"
 echo "Run ID: $OPENEVOLVE_RUN_ID"
