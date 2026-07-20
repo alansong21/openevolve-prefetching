@@ -1,4 +1,4 @@
-"""Phase 3 orchestrator: bandit + plays + blackboard + engineer/critic dispatch."""
+"""Combined orchestrator: bandit + unified implementer + deterministic gates."""
 
 from __future__ import annotations
 
@@ -15,10 +15,10 @@ if str(_COMBINED_DIR) not in sys.path:
 
 from agents.critic import review_combined_source  # noqa: E402
 from agents.directive import format_directive, synthesize_orchestrated_directive  # noqa: E402
-from agents.engineer import run_engineer  # noqa: E402
+from agents.implementer import run_implementer  # noqa: E402
+from agents.storage import analyze_storage  # noqa: E402
 from blackboard import Blackboard  # noqa: E402
 from insight_service import build_insight_bundle  # noqa: E402
-from merge import extract_layout, merge_sections  # noqa: E402
 from strategy.bandit import KnobArm  # noqa: E402
 from strategy.plays import Play, select_play_for_arm  # noqa: E402
 
@@ -41,9 +41,7 @@ class OrchestratorState(TypedDict, total=False):
     play: Play
     directive: dict[str, Any]
     directive_text: str
-    layout: Any
-    pf_section: str
-    rp_section: str
+    candidate_code: str
     child_code: str
     llm_responses: list[str]
     summary: str
@@ -131,10 +129,13 @@ def node_synthesize_directive(state: OrchestratorState) -> OrchestratorState:
 
 
 def node_prepare_sections(state: OrchestratorState) -> OrchestratorState:
-    layout = extract_layout(state["parent_code"])
-    state["layout"] = layout
-    state["pf_section"] = layout.prefetcher_section
-    state["rp_section"] = layout.replacement_section
+    state["candidate_code"] = state["parent_code"]
+    parent_storage = analyze_storage(state["parent_code"])
+    state["insights"] = (
+        state.get("insights", "")
+        + "\n\n=== Storage analysis (parent) ===\n"
+        + parent_storage.text()
+    )
     state["llm_responses"] = []
     return state
 
@@ -150,52 +151,30 @@ async def node_engineer_and_critic(state: OrchestratorState) -> OrchestratorStat
     arm: KnobArm = state["arm"]
     iteration = int(state.get("iteration", 0))
 
-    pf_section = state["pf_section"]
-    rp_section = state["rp_section"]
-    layout = state["layout"]
+    candidate_code = state["candidate_code"]
     responses: list[str] = state.get("llm_responses", [])
     critic_feedback = ""
 
     for attempt in range(MAX_CRITIC_RETRIES + 1):
-        if directive["edit_prefetcher"]:
-            pf_response = await run_engineer(
-                llm_ensemble,
-                role="prefetcher",
-                section_source=pf_section,
-                directive_text=directive_text,
-                insights=insights,
-                critic_feedback=critic_feedback,
-            )
-            responses.append(f"[Prefetcher engineer attempt {attempt + 1}]\n{pf_response}")
-            pf_section = _apply_section_diff(pf_section, pf_response, diff_pattern)
-        else:
-            responses.append(f"[Prefetcher engineer] skipped ({directive['mode']})")
-
-        if directive["edit_replacement"]:
-            rp_response = await run_engineer(
-                llm_ensemble,
-                role="replacement",
-                section_source=rp_section,
-                directive_text=directive_text,
-                insights=insights,
-                critic_feedback=critic_feedback,
-            )
-            responses.append(f"[Replacement engineer attempt {attempt + 1}]\n{rp_response}")
-            rp_section = _apply_section_diff(rp_section, rp_response, diff_pattern)
-        else:
-            responses.append(f"[Replacement engineer] skipped ({directive['mode']})")
-
-        child_code = merge_sections(layout, pf_section, rp_section)
+        response = await run_implementer(
+            llm_ensemble,
+            combined_source=candidate_code,
+            directive_text=directive_text,
+            insights=insights,
+            critic_feedback=critic_feedback,
+        )
+        responses.append(f"[Unified implementer attempt {attempt + 1}]\n{response}")
+        child_code = _apply_section_diff(candidate_code, response, diff_pattern)
         contract_id = directive.get("metadata_contract_id")
         report = review_combined_source(
             child_code,
             metadata_contract_id=contract_id,
-            joint_edit=directive.get("edit_prefetcher", False) and directive.get("edit_replacement", False),
+            joint_edit=True,
         )
-        if report.approved:
+        storage_report = analyze_storage(child_code)
+        if report.approved and storage_report.approved:
             state["child_code"] = child_code
-            state["pf_section"] = pf_section
-            state["rp_section"] = rp_section
+            state["candidate_code"] = child_code
             state["llm_responses"] = responses
             state["summary"] = (
                 f"Orchestrator ({directive['mode']}, play={play.id}, arm={arm}, "
@@ -213,13 +192,14 @@ async def node_engineer_and_critic(state: OrchestratorState) -> OrchestratorStat
             board.save()
             return state
 
-        critic_feedback = report.text()
+        critic_feedback = report.text() + "\n\n" + storage_report.text()
+        candidate_code = child_code
         board.record_tried_idea(
             play_id=play.id,
             arm=arm,
             mode=directive["mode"],
             iteration=iteration,
-            outcome="failed_critic",
+            outcome="failed_storage" if not storage_report.approved else "failed_critic",
         )
         board.save()
         logger.warning("Critic rejected orchestrator attempt %d: %s", attempt + 1, critic_feedback)

@@ -9,13 +9,28 @@ PREFETCHER_BEGIN = "// === OPENEVOLVE_PREFETCHER_BEGIN ==="
 PREFETCHER_END = "// === OPENEVOLVE_PREFETCHER_END ==="
 REPLACEMENT_BEGIN = "// === OPENEVOLVE_REPLACEMENT_BEGIN ==="
 REPLACEMENT_END = "// === OPENEVOLVE_REPLACEMENT_END ==="
+DR_PREFETCHER_BEGIN = "// === OPENEVOLVE_DR_PREFETCHER_BEGIN ==="
+DR_PREFETCHER_END = "// === OPENEVOLVE_DR_PREFETCHER_END ==="
+DR_REPLACEMENT_BEGIN = "// === OPENEVOLVE_DR_REPLACEMENT_BEGIN ==="
+DR_REPLACEMENT_END = "// === OPENEVOLVE_DR_REPLACEMENT_END ==="
 
 _BLOCK_RE = re.compile(
-    r"^[ \t]*//[ \t]*===[ \t]*OPENEVOLVE_(PREFETCHER|REPLACEMENT)_(BEGIN|END)[ \t]*===[ \t]*$",
+    r"^[ \t]*//[ \t]*===[ \t]*OPENEVOLVE_"
+    r"(PREFETCHER|REPLACEMENT|DR_PREFETCHER|DR_REPLACEMENT)"
+    r"_(BEGIN|END)[ \t]*===[ \t]*$",
     re.MULTILINE,
 )
 
-MARKER_KEYS = ("PREFETCHER_BEGIN", "PREFETCHER_END", "REPLACEMENT_BEGIN", "REPLACEMENT_END")
+MARKER_KEYS = (
+    "PREFETCHER_BEGIN",
+    "PREFETCHER_END",
+    "REPLACEMENT_BEGIN",
+    "REPLACEMENT_END",
+    "DR_PREFETCHER_BEGIN",
+    "DR_PREFETCHER_END",
+    "DR_REPLACEMENT_BEGIN",
+    "DR_REPLACEMENT_END",
+)
 
 
 def parse_marker_positions(text: str) -> dict[str, int]:
@@ -42,6 +57,16 @@ def parse_marker_positions(text: str) -> dict[str, int]:
         raise ValueError(
             "Prefetcher block must appear before the replacement block in the combined source"
         )
+    if not (markers["REPLACEMENT_END"] < markers["DR_PREFETCHER_BEGIN"]):
+        raise ValueError("ChampSim blocks must appear before drcachesim blocks")
+    if not (markers["DR_PREFETCHER_BEGIN"] < markers["DR_PREFETCHER_END"]):
+        raise ValueError("drcachesim prefetcher BEGIN marker must precede END marker")
+    if not (markers["DR_PREFETCHER_END"] < markers["DR_REPLACEMENT_BEGIN"]):
+        raise ValueError(
+            "drcachesim prefetcher block must appear before its replacement block"
+        )
+    if not (markers["DR_REPLACEMENT_BEGIN"] < markers["DR_REPLACEMENT_END"]):
+        raise ValueError("drcachesim replacement BEGIN marker must precede END marker")
     return markers
 
 
@@ -69,3 +94,22 @@ def split_combined_source(text: str) -> Tuple[str, str]:
     pf_source = _slice("PREFETCHER_BEGIN", "PREFETCHER_END", pf_header).rstrip() + "\n"
     rp_source = _slice("REPLACEMENT_BEGIN", "REPLACEMENT_END", rp_header).rstrip() + "\n"
     return pf_source, rp_source
+
+
+def split_dual_backend_source(text: str) -> tuple[str, str, str, str]:
+    """Split source into ChampSim PF/RP and drcachesim PF/RP sections."""
+    pf_source, rp_source = split_combined_source(text)
+    markers = parse_marker_positions(text)
+
+    def _slice(begin_key: str, end_key: str) -> str:
+        begin_idx = text.find("\n", markers[begin_key])
+        if begin_idx == -1:
+            raise ValueError(f"Marker {begin_key} is not followed by a newline")
+        return text[begin_idx + 1 : markers[end_key]].rstrip() + "\n"
+
+    return (
+        pf_source,
+        rp_source,
+        _slice("DR_PREFETCHER_BEGIN", "DR_PREFETCHER_END"),
+        _slice("DR_REPLACEMENT_BEGIN", "DR_REPLACEMENT_END"),
+    )

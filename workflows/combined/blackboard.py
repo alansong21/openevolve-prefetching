@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any
 
 from strategy.bandit import KnobArm, StrategyBandit
+from agents.reward_hacking import assess_reward_hacking
+from calibration import ProxyCalibration
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_STATE_DIR = REPO_ROOT / "workflows" / "combined" / "state"
@@ -172,6 +174,16 @@ class Blackboard:
         """Apply bandit reward from evaluation and return IPC delta if computable."""
 
         pending = self.pop_pending_reward()
+        hack_report = assess_reward_hacking(child_metrics, parent_metrics)
+        if hack_report.suspicious:
+            child_metrics["reward_hack_suspected"] = 1.0
+            child_metrics["promotion_eligible"] = 0.0
+            if "combined_score" in child_metrics:
+                child_metrics["combined_score"] = min(
+                    float(child_metrics["combined_score"]), -0.01
+                )
+        else:
+            child_metrics["reward_hack_suspected"] = 0.0
         parent_ipc = None
         child_ipc = child_metrics.get("ipc")
         if parent_metrics and parent_metrics.get("ipc") is not None:
@@ -188,7 +200,32 @@ class Blackboard:
             if parent_mpki is not None and child_mpki is not None:
                 reward += 0.001 * (float(parent_mpki) - float(child_mpki))
 
-        if pending and reward is not None:
+        if (
+            child_metrics.get("stage2_ran")
+            and parent_ipc is not None
+            and child_ipc is not None
+            and child_metrics.get("stage1_available")
+        ):
+            calibration = ProxyCalibration.load()
+            actual_delta = float(child_ipc) - parent_ipc
+            prior_prediction = calibration.predict(
+                child_metrics, require_trusted=False
+            )
+            if prior_prediction is not None:
+                child_metrics["calibration_prediction_error"] = (
+                    prior_prediction - actual_delta
+                )
+            calibration.add_observation(child_metrics, actual_delta)
+            calibration.save()
+            child_metrics["calibration_spearman"] = calibration.spearman
+            child_metrics["calibration_mae"] = (
+                calibration.mean_absolute_error or 0.0
+            )
+            child_metrics["calibration_trusted"] = (
+                1.0 if calibration.trusted else 0.0
+            )
+
+        if pending and reward is not None and not hack_report.suspicious:
             self.bandit.update(pending["arm"], reward)
             self.record_tried_idea(
                 play_id=pending["play_id"],
@@ -197,6 +234,15 @@ class Blackboard:
                 iteration=int(pending.get("iteration", 0)),
                 outcome="evaluated",
                 reward=reward,
+            )
+        elif pending and hack_report.suspicious:
+            self.record_tried_idea(
+                play_id=pending["play_id"],
+                arm=pending["arm"],
+                mode=pending["mode"],
+                iteration=int(pending.get("iteration", 0)),
+                outcome="reward_hack_suspected",
+                reward=None,
             )
 
         self.recent_results.append(
@@ -208,11 +254,13 @@ class Blackboard:
                 "reward": reward,
                 "arm": pending.get("arm") if pending else None,
                 "play_id": pending.get("play_id") if pending else None,
+                "reward_hack_suspected": hack_report.suspicious,
+                "reward_hack_reasons": hack_report.reasons,
                 "timestamp": time.time(),
             }
         )
         self.save()
-        return reward
+        return None if hack_report.suspicious else reward
 
     def orchestrator_context(self, *, limit: int = 5) -> str:
         """Short summary of tried ideas for engineer prompts."""

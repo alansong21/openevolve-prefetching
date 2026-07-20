@@ -12,6 +12,7 @@ if str(_COMBINED_DIR) not in sys.path:
     sys.path.insert(0, str(_COMBINED_DIR))
 
 from agents.miss_log import analyze_miss_logs  # noqa: E402
+from agents.drcachesim_analysis import analyze_drcachesim  # noqa: E402
 from agents.workload import characterize_workloads  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -76,6 +77,20 @@ def build_insight_bundle(
         trace_runs = _extract_trace_runs(artifacts)
         trace_names = [str(run["name"]) for run in trace_runs]
 
+    artifact_data = artifacts or {}
+    dr_metrics = artifact_data.get("drcachesim_metrics")
+    if not isinstance(dr_metrics, dict):
+        dr_metrics = {}
+    dr_output = artifact_data.get("drcachesim_output")
+    dr_analysis = artifact_data.get("drcachesim_analysis")
+    if not isinstance(dr_analysis, str):
+        dr_analysis = analyze_drcachesim(
+            dr_metrics, dr_output if isinstance(dr_output, str) else None
+        )
+    storage_analysis = artifact_data.get(
+        "storage_report", "=== Storage analysis ===\nNo storage report is available."
+    )
+
     parts = [
         "=== Co-design advisor insights (Phase 1) ===",
         f"Task: {task_description}",
@@ -83,6 +98,10 @@ def build_insight_bundle(
         characterize_workloads(trace_names, profile_dir),
         "",
         analyze_miss_logs(_extract_trace_runs(artifacts)),
+        "",
+        dr_analysis,
+        "",
+        str(storage_analysis),
         "",
         "Use workload biases to steer prefetcher vs replacement edits. "
         "Use miss-log labels (coverage_gap / conflict / capacity / compulsory) "

@@ -346,7 +346,7 @@ void openevolve_prefetcher::prefetcher_cycle_operate() {}
 // === OPENEVOLVE_PREFETCHER_END ===
 
 // === OPENEVOLVE_REPLACEMENT_BEGIN ===
-// Baseline: DRRIP (Dynamic RRIP), aligned with ChampSim replacement/drrip.
+// Baseline: LRU, aligned with ChampSim replacement/lru.
 // Evolve toward coordinated prefetcher/replacement behaviour; keep API compatible
 // with openevolve_replacement.h (do not change the header).
 
@@ -355,55 +355,18 @@ void openevolve_prefetcher::prefetcher_cycle_operate() {}
 #include <cstdint>
 #include <vector>
 
-#include "msl/fwcounter.h"
 #include "openevolve_replacement.h"
 
 // EVOLVE-BLOCK-START
 namespace {
 
-constexpr unsigned maxRRPV = 3;
-constexpr unsigned BRRIP_MAX = 32;
-constexpr std::size_t PSEL_WIDTH = 10;
-
-enum class drrip_set_kind { follower, brrip_leader, srrip_leader };
-
 struct openevolve_replacement_state {
   long num_way = 0;
-  unsigned brrip_counter = 0;
-  std::vector<champsim::msl::fwcounter<PSEL_WIDTH>> PSEL;
-  std::vector<unsigned> rrpv;
+  uint32_t cycle = 0;
+  std::vector<uint32_t> last_used_cycles;
 };
 
 openevolve_replacement_state oer_state{};
-
-unsigned& access_rrpv(long set, long way)
-{
-  return oer_state.rrpv.at(static_cast<std::size_t>(set * oer_state.num_way + way));
-}
-
-void update_brrip(long set, long way)
-{
-  access_rrpv(set, way) = maxRRPV;
-  oer_state.brrip_counter++;
-  if (oer_state.brrip_counter == BRRIP_MAX) {
-    oer_state.brrip_counter = 0;
-    access_rrpv(set, way) = maxRRPV - 1;
-  }
-}
-
-void update_srrip(long set, long way) { access_rrpv(set, way) = maxRRPV - 1; }
-
-drrip_set_kind set_kind(long set, openevolve_replacement* self)
-{
-  switch (self->get_set_sample_category(set)) {
-    case 0:
-      return drrip_set_kind::brrip_leader;
-    case 1:
-      return drrip_set_kind::srrip_leader;
-    default:
-      return drrip_set_kind::follower;
-  }
-}
 
 } // namespace
 
@@ -412,14 +375,8 @@ openevolve_replacement::openevolve_replacement(CACHE* cache) : openevolve_replac
 openevolve_replacement::openevolve_replacement(CACHE* cache, long sets, long ways) : replacement(cache)
 {
   oer_state.num_way = ways;
-  oer_state.brrip_counter = 0;
-  oer_state.rrpv.assign(static_cast<std::size_t>(sets * ways), 0);
-  oer_state.PSEL.clear();
-  oer_state.PSEL.reserve(NUM_CPUS);
-  const auto psel_mid = static_cast<long long>(1) << (PSEL_WIDTH - 1);
-  for (std::size_t i = 0; i < NUM_CPUS; ++i) {
-    oer_state.PSEL.emplace_back(psel_mid);
-  }
+  oer_state.cycle = 0;
+  oer_state.last_used_cycles.assign(static_cast<std::size_t>(sets * ways), 0);
 }
 
 long openevolve_replacement::find_victim(uint32_t triggering_cpu, uint64_t instr_id, long set, const champsim::cache_block* current_set,
@@ -432,14 +389,9 @@ long openevolve_replacement::find_victim(uint32_t triggering_cpu, uint64_t instr
   (void)full_addr;
   (void)type;
 
-  auto begin = std::next(std::begin(oer_state.rrpv), set * oer_state.num_way);
+  auto begin = std::next(std::begin(oer_state.last_used_cycles), set * oer_state.num_way);
   auto end = std::next(begin, oer_state.num_way);
-  auto victim = std::max_element(begin, end);
-  if (const unsigned rrpv_update = maxRRPV - *victim; rrpv_update != 0) {
-    for (auto it = begin; it != end; ++it) {
-      *it += rrpv_update;
-    }
-  }
+  auto victim = std::min_element(begin, end);
   assert(begin <= victim);
   assert(victim < end);
   return std::distance(begin, victim);
@@ -448,33 +400,13 @@ long openevolve_replacement::find_victim(uint32_t triggering_cpu, uint64_t instr
 void openevolve_replacement::replacement_cache_fill(uint32_t triggering_cpu, long set, long way, champsim::address full_addr, champsim::address ip,
                                                     champsim::address victim_addr, access_type type)
 {
+  (void)triggering_cpu;
   (void)full_addr;
   (void)ip;
   (void)victim_addr;
+  (void)type;
 
-  if (access_type{type} == access_type::WRITE) {
-    access_rrpv(set, way) = maxRRPV - 1;
-    return;
-  }
-
-  auto& selector = oer_state.PSEL.at(triggering_cpu);
-  switch (set_kind(set, this)) {
-    case drrip_set_kind::follower:
-      if (selector.value() > (selector.maximum / 2)) {
-        update_brrip(set, way);
-      } else {
-        update_srrip(set, way);
-      }
-      break;
-    case drrip_set_kind::brrip_leader:
-      oer_state.PSEL[triggering_cpu]--;
-      update_brrip(set, way);
-      break;
-    case drrip_set_kind::srrip_leader:
-      oer_state.PSEL[triggering_cpu]++;
-      update_srrip(set, way);
-      break;
-  }
+  oer_state.last_used_cycles.at(static_cast<std::size_t>(set * oer_state.num_way + way)) = oer_state.cycle++;
 }
 
 void openevolve_replacement::update_replacement_state(uint32_t triggering_cpu, long set, long way, champsim::address full_addr, champsim::address ip,
@@ -485,13 +417,175 @@ void openevolve_replacement::update_replacement_state(uint32_t triggering_cpu, l
   (void)ip;
   (void)victim_addr;
 
-  if (hit) {
-    if (access_type{type} == access_type::WRITE) {
-      access_rrpv(set, way) = maxRRPV - 1;
-      return;
-    }
-    access_rrpv(set, way) = 0;
+  // Skip writeback hits, matching ChampSim's LRU.
+  if (hit && access_type{type} != access_type::WRITE) {
+    oer_state.last_used_cycles.at(static_cast<std::size_t>(set * oer_state.num_way + way)) = oer_state.cycle++;
   }
 }
 // EVOLVE-BLOCK-END
 // === OPENEVOLVE_REPLACEMENT_END ===
+
+// === OPENEVOLVE_DR_PREFETCHER_BEGIN ===
+// drcachesim backend seed: bounded per-PC constant-stride prefetcher.
+#include "simulator/prefetcher_plugin.h"
+
+#include "common/trace_entry.h"
+#include "simulator/caching_device.h"
+
+#include <algorithm>
+#include <array>
+#include <cstdint>
+
+// EVOLVE-BLOCK-START
+namespace dynamorio::drmemtrace {
+namespace {
+struct dr_stride_entry {
+  addr_t pc = 0;
+  addr_t last_line = 0;
+  int64_t stride = 0;
+  uint8_t confidence = 0;
+  bool valid = false;
+};
+
+constexpr std::size_t kDrStrideEntries = 256;
+
+class openevolve_dr_prefetcher final : public prefetcher_t {
+public:
+  explicit openevolve_dr_prefetcher(int block_size) : prefetcher_t(block_size) {}
+
+  void prefetch(caching_device_t* cache, const memref_t& demand, bool missed) override
+  {
+    (void)missed;
+    const addr_t line = demand.data.addr / static_cast<addr_t>(block_size_);
+    auto& entry = entries_[demand.data.pc % entries_.size()];
+    if (entry.valid && entry.pc == demand.data.pc) {
+      const int64_t stride = static_cast<int64_t>(line) - static_cast<int64_t>(entry.last_line);
+      if (stride == entry.stride && stride != 0) {
+        entry.confidence = static_cast<uint8_t>(std::min<int>(3, entry.confidence + 1));
+      } else {
+        entry.stride = stride;
+        entry.confidence = 0;
+      }
+      if (entry.confidence >= 1) {
+        memref_t request = demand;
+        request.data.type = TRACE_TYPE_HARDWARE_PREFETCH;
+        request.data.addr = static_cast<addr_t>(
+            (static_cast<int64_t>(line) + entry.stride) * block_size_);
+        cache->request(request);
+      }
+    } else {
+      entry = {};
+      entry.pc = demand.data.pc;
+      entry.last_line = line;
+      entry.valid = true;
+    }
+    entry.last_line = line;
+  }
+
+private:
+  std::array<dr_stride_entry, kDrStrideEntries> entries_{};
+};
+
+class openevolve_dr_prefetcher_factory final : public prefetcher_factory_t {
+public:
+  prefetcher_t* create_prefetcher(int block_size) override
+  {
+    return new openevolve_dr_prefetcher(block_size);
+  }
+};
+} // namespace
+} // namespace dynamorio::drmemtrace
+
+extern "C" uint64_t drcachesim_prefetcher_plugin_abi_version()
+{
+  return dynamorio::drmemtrace::DRCACHESIM_PREFETCHER_PLUGIN_ABI_VERSION;
+}
+
+extern "C" dynamorio::drmemtrace::prefetcher_factory_t* drcachesim_create_prefetcher_factory()
+{
+  return new dynamorio::drmemtrace::openevolve_dr_prefetcher_factory();
+}
+
+extern "C" void drcachesim_destroy_prefetcher_factory(dynamorio::drmemtrace::prefetcher_factory_t* factory)
+{
+  delete factory;
+}
+// EVOLVE-BLOCK-END
+// === OPENEVOLVE_DR_PREFETCHER_END ===
+
+// === OPENEVOLVE_DR_REPLACEMENT_BEGIN ===
+// drcachesim backend seed: LRU with per-way age counters (matches stock policy_lru).
+#include "simulator/replacement_policy_plugin.h"
+
+#include <algorithm>
+#include <cstdint>
+#include <string>
+#include <vector>
+
+// EVOLVE-BLOCK-START
+namespace dynamorio::drmemtrace {
+namespace {
+class openevolve_dr_replacement final : public cache_replacement_policy_t {
+public:
+  openevolve_dr_replacement(int num_sets, int associativity)
+      : cache_replacement_policy_t(num_sets, associativity),
+        lru_counters_(static_cast<std::size_t>(num_sets),
+                      std::vector<int>(static_cast<std::size_t>(associativity), 1))
+  {
+  }
+
+  void access_update(int set_idx, int way, cache_access_outcome_t /*outcome*/) override
+  {
+    const int count = lru_counters_[static_cast<std::size_t>(set_idx)][static_cast<std::size_t>(way)];
+    if (count == 0)
+      return;
+    for (int i = 0; i < associativity_; ++i) {
+      if (i != way && lru_counters_[static_cast<std::size_t>(set_idx)][static_cast<std::size_t>(i)] <= count)
+        lru_counters_[static_cast<std::size_t>(set_idx)][static_cast<std::size_t>(i)]++;
+    }
+    lru_counters_[static_cast<std::size_t>(set_idx)][static_cast<std::size_t>(way)] = 0;
+  }
+
+  void eviction_update(int /*set_idx*/, int /*way*/) override {}
+
+  void invalidation_update(int set_idx, int way) override
+  {
+    auto& counters = lru_counters_[static_cast<std::size_t>(set_idx)];
+    const int max_counter = *std::max_element(counters.begin(), counters.end());
+    counters[static_cast<std::size_t>(way)] = max_counter + 1;
+  }
+
+  int get_next_way_to_replace(int set_idx) const override
+  {
+    int max_counter = 0;
+    int max_way = 0;
+    for (int way = 0; way < associativity_; ++way) {
+      const int count = lru_counters_[static_cast<std::size_t>(set_idx)][static_cast<std::size_t>(way)];
+      if (count > max_counter) {
+        max_counter = count;
+        max_way = way;
+      }
+    }
+    return max_way;
+  }
+
+  std::string get_name() const override { return "openevolve_lru"; }
+
+private:
+  std::vector<std::vector<int>> lru_counters_;
+};
+} // namespace
+} // namespace dynamorio::drmemtrace
+
+extern "C" uint64_t drcachesim_replacement_policy_plugin_abi_version()
+{
+  return dynamorio::drmemtrace::DRCACHESIM_REPLACEMENT_POLICY_PLUGIN_ABI_VERSION;
+}
+
+extern "C" dynamorio::drmemtrace::cache_replacement_policy_t*
+drcachesim_create_replacement_policy(int num_sets, int associativity)
+{
+  return new dynamorio::drmemtrace::openevolve_dr_replacement(num_sets, associativity);
+}
+// EVOLVE-BLOCK-END
+// === OPENEVOLVE_DR_REPLACEMENT_END ===

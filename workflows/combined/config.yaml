@@ -7,7 +7,11 @@ max_code_length: 200000
 evaluator:
   timeout: 2147483647
   parallel_evaluations: 1
-  cascade_evaluation: false
+  cascade_evaluation: true
+  # Stage 1 emits 1.0 only when the periodic ChampSim stage is due and the
+  # drcachesim proxy passes its quality gate. Proxy-only candidates remain
+  # negative but are still archived for search.
+  cascade_thresholds: [0.5, 0.5]
   use_llm_feedback: true
 
 llm:
@@ -29,10 +33,10 @@ prompt:
     =====================
     PROBLEM OVERVIEW
     =====================
-    You are co-evolving a ChampSim L2 cache PREFETCHER and a ChampSim L2 cache
-    REPLACEMENT POLICY together to maximise IPC. Both implementations live in the
-    SAME source file separated by split markers; the evaluator splits the file
-    back into two ChampSim modules before building.
+    You are co-evolving one L2 cache algorithm implemented as PREFETCHER and
+    REPLACEMENT POLICY backends for both ChampSim and drcachesim. All four
+    implementations live in the SAME source file. The evaluator builds the two
+    ChampSim modules and one drcachesim policy plugin.
 
     File layout (do not move or remove the markers, do not introduce extras):
 
@@ -44,7 +48,16 @@ prompt:
       // ... `openevolve_replacement` member functions live here ...
       // === OPENEVOLVE_REPLACEMENT_END ===
 
-    Each section becomes an independent .cc translation unit:
+      // === OPENEVOLVE_DR_PREFETCHER_BEGIN ===
+      // ... drcachesim `prefetcher_t` implementation + ABI exports ...
+      // === OPENEVOLVE_DR_PREFETCHER_END ===
+
+      // === OPENEVOLVE_DR_REPLACEMENT_BEGIN ===
+      // ... drcachesim `cache_replacement_policy_t` + ABI exports ...
+      // === OPENEVOLVE_DR_REPLACEMENT_END ===
+
+    The ChampSim sections become independent .cc translation units; the two
+    drcachesim sections are concatenated into one plugin:
       • The PREFETCHER section MUST `#include "openevolve_prefetcher.h"` and
         define every member of class `openevolve_prefetcher` declared in that
         header (`prefetcher_initialize`, `prefetcher_cache_operate`,
@@ -56,6 +69,15 @@ prompt:
       • The two sections share NOTHING at compile time: no shared globals,
         helpers, or `using` directives. Anonymous namespaces in one section
         are invisible to the other.
+      • The drcachesim prefetcher must export
+        `drcachesim_prefetcher_plugin_abi_version`,
+        `drcachesim_create_prefetcher_factory`, and
+        `drcachesim_destroy_prefetcher_factory`.
+      • The drcachesim replacement must export
+        `drcachesim_replacement_policy_plugin_abi_version` and
+        `drcachesim_create_replacement_policy`.
+      • Keep the algorithm aligned across simulators, while adapting to each
+        simulator's available callbacks and metadata.
       • Both sections are wrapped in OpenEvolve `// EVOLVE-BLOCK-START` /
         `// EVOLVE-BLOCK-END` markers; mutate code inside those blocks only.
 
@@ -64,13 +86,12 @@ prompt:
     =====================
     Optimization goal:
       • Maximise the IPC reported by ChampSim across the configured traces.
-      • The replacement policy and prefetcher are scored jointly. Prefer
-        coordinated changes (e.g. prefetched fills tagged with low priority and
-        the replacement noticing prefetch metadata, or stride confidence used
-        to gate insertion priority).
+      • The replacement policy and prefetcher are scored jointly. Implement
+        each design change coherently in both simulator backends.
 
     Correctness & safety:
-      • The split file must compile cleanly — both halves independently.
+      • The split file must compile cleanly — both ChampSim modules and the
+        combined drcachesim plugin.
       • No dynamic allocation in the hot path; keep state bounded.
       • No file I/O, logging, exceptions, or mutation of architecture state.
 
@@ -144,7 +165,7 @@ prompt:
     =====================
       • Keep all OpenEvolve markers and split markers verbatim. Do not insert
         prose or markdown anywhere outside SEARCH/REPLACE blocks.
-      • Both halves must include the right header (`openevolve_prefetcher.h`
+      • Both ChampSim halves must include the right header (`openevolve_prefetcher.h`
         for the prefetcher half, `openevolve_replacement.h` for the
         replacement half). Including the wrong header in a section is a hard
         compile error.
@@ -173,7 +194,7 @@ prompt:
     SELF-CHECK BEFORE RESPONDING
     =====================
     Before emitting the diff, verify:
-      • Both halves still compile as standalone .cc files after the patch.
+      • Both ChampSim halves and the drcachesim plugin compile after the patch.
       • You have NOT moved code across the split markers.
       • You have NOT introduced shared globals between sections.
       • Prefetcher member signatures and replacement member signatures match

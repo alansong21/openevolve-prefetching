@@ -24,6 +24,11 @@ PREFETCHER_OBJ_DIR = CHAMPSIM_ROOT / ".csconfig" / "modules" / "prefetcher" / "o
 CONFIG_PATH = Path(__file__).with_name("champsim_config.json").resolve()
 TRACE_DIR = Path(os.environ.get("CHAMPSIM_TRACE_DIR", REPO_ROOT / "traces"))
 TRACE_NAME_TOKEN = os.environ.get("CHAMPSIM_TRACE_NAME_TOKEN", "champsimtrace").strip().lower()
+HELDOUT_PATTERNS = tuple(
+    token.strip().lower()
+    for token in os.environ.get("CHAMPSIM_HELDOUT_PATTERNS", "").split(",")
+    if token.strip()
+)
 
 CHAMPSIM_BIN = CHAMPSIM_ROOT / "bin" / "champsim"
 
@@ -508,6 +513,21 @@ def evaluate(program_path: str) -> EvaluationResult:
 
     successful_ipcs = [ipc for ipc in trace_ipcs if ipc > 0]
     avg_ipc = sum(trace_ipcs) / len(trace_ipcs) if trace_ipcs else 0.0
+    heldout_indices = [
+        index
+        for index, name in enumerate(all_traces)
+        if HELDOUT_PATTERNS
+        and any(pattern in name.lower() for pattern in HELDOUT_PATTERNS)
+    ]
+    train_indices = [
+        index for index in range(len(all_traces)) if index not in heldout_indices
+    ]
+    train_ipcs = [trace_ipcs[index] for index in train_indices]
+    heldout_ipcs = [trace_ipcs[index] for index in heldout_indices]
+    train_ipc = sum(train_ipcs) / len(train_ipcs) if train_ipcs else avg_ipc
+    heldout_ipc = (
+        sum(heldout_ipcs) / len(heldout_ipcs) if heldout_ipcs else None
+    )
     sim_time = max(trace_sim_times) if trace_sim_times else 0.0
     
     total_time = time.time() - start
@@ -543,7 +563,12 @@ def evaluate(program_path: str) -> EvaluationResult:
         "wall_time_s": total_time,
         "traces_evaluated": len(traces),
         "successful_traces": len(successful_ipcs),
+        "train_ipc": train_ipc,
+        "train_trace_count": len(train_indices),
+        "heldout_trace_count": len(heldout_indices),
     }
+    if heldout_ipc is not None:
+        metrics["heldout_ipc"] = heldout_ipc
 
     l2c_mpki_values = []
     llc_mpki_values = []

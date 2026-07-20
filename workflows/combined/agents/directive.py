@@ -9,7 +9,7 @@ from metadata_contract import get_contract_text
 from strategy.bandit import KnobArm
 from strategy.plays import Play
 
-MutationMode = Literal["joint", "prefetcher_only", "replacement_only"]
+MutationFocus = Literal["joint", "prefetcher", "replacement"]
 
 PF_REQUIRED = (
     "prefetcher_initialize",
@@ -28,24 +28,28 @@ def choose_mutation_mode(
     metrics: dict[str, Any] | None,
     insights: str,
     iteration: int,
-) -> MutationMode:
+) -> MutationFocus:
     forced = os.environ.get("OPENEVOLVE_MUTATION_MODE", "").lower()
-    if forced in {"joint", "prefetcher_only", "replacement_only"}:
+    if forced in {"joint", "prefetcher", "replacement"}:
         return forced  # type: ignore[return-value]
+    if forced == "prefetcher_only":
+        return "prefetcher"
+    if forced == "replacement_only":
+        return "replacement"
 
     if metrics:
         pf_useless = float(metrics.get("l2c_pf_useless", 0))
         pf_useful = float(metrics.get("l2c_pf_useful", 0))
         if pf_useless > pf_useful and pf_useless >= 20:
-            return "replacement_only"
+            return "replacement"
         if pf_useful > 0 and pf_useless == 0 and iteration % 3 == 0:
-            return "prefetcher_only"
+            return "prefetcher"
 
     if "coverage_gap" in insights and "conflict" not in insights[:2000]:
-        return "prefetcher_only"
+        return "prefetcher"
     if "conflict" in insights or "capacity" in insights:
         if iteration % 2 == 1:
-            return "replacement_only"
+            return "replacement"
 
     return "joint"
 
@@ -61,23 +65,26 @@ def synthesize_orchestrated_directive(
     """Build a directive from bandit arm + named play (Phase 3)."""
 
     forced = os.environ.get("OPENEVOLVE_MUTATION_MODE", "").lower()
-    mode: MutationMode = play.mode
-    if forced in {"joint", "prefetcher_only", "replacement_only"}:
-        mode = forced  # type: ignore[assignment]
+    focus = {
+        "prefetcher_only": "prefetcher",
+        "replacement_only": "replacement",
+    }.get(play.mode, "joint")
+    if forced in {"joint", "prefetcher", "replacement"}:
+        focus = forced
+    elif forced in {"prefetcher_only", "replacement_only"}:
+        focus = forced.removesuffix("_only")
 
-    edit_pf = mode in {"joint", "prefetcher_only"}
-    edit_rp = mode in {"joint", "replacement_only"}
-
-    contract_id = play.contract_id if mode == "joint" else None
+    contract_id = play.contract_id
     metadata_contract = get_contract_text(contract_id) or (
         "No metadata contract this round (single-component edit)."
     )
 
     return {
-        "mode": mode,
+        "mode": "joint",
+        "focus_component": focus,
         "summary": f"Play: {play.name} — {play.description}",
-        "edit_prefetcher": edit_pf,
-        "edit_replacement": edit_rp,
+        "edit_prefetcher": True,
+        "edit_replacement": True,
         "prefetcher_focus": play.pf_guidance,
         "replacement_focus": play.rp_guidance,
         "metadata_contract": metadata_contract,
@@ -99,7 +106,7 @@ def synthesize_directive(
 ) -> dict[str, Any]:
     """Legacy Phase 2 heuristic directive (used when orchestrator is disabled)."""
 
-    mode = choose_mutation_mode(metrics, insights, iteration)
+    focus = choose_mutation_mode(metrics, insights, iteration)
     l2c_mpki = metrics.get("l2c_mpki") if metrics else None
     ipc = metrics.get("ipc") if metrics else None
 
@@ -112,18 +119,15 @@ def synthesize_directive(
         "fills. Demote dead or low-confidence prefetches."
     )
 
-    if mode == "prefetcher_only":
-        summary = f"PF-only round: {pf_focus}"
-        edit_pf, edit_rp = True, False
-    elif mode == "replacement_only":
-        summary = f"RP-only round: {rp_focus}"
-        edit_pf, edit_rp = False, True
+    if focus == "prefetcher":
+        summary = f"Unified round with prefetcher emphasis: {pf_focus}"
+    elif focus == "replacement":
+        summary = f"Unified round with replacement emphasis: {rp_focus}"
     else:
         summary = (
             "Joint round: coordinate metadata contract — PF encodes confidence in "
             "returned metadata; RP reads it in replacement_cache_fill for insertion RRPV."
         )
-        edit_pf, edit_rp = True, True
 
     metadata_contract = (
         "Metadata contract: low 8 bits = prefetch type enum; bits 8-15 = confidence "
@@ -131,14 +135,15 @@ def synthesize_directive(
     )
 
     return {
-        "mode": mode,
+        "mode": "joint",
+        "focus_component": focus,
         "summary": summary,
-        "edit_prefetcher": edit_pf,
-        "edit_replacement": edit_rp,
+        "edit_prefetcher": True,
+        "edit_replacement": True,
         "prefetcher_focus": pf_focus,
         "replacement_focus": rp_focus,
         "metadata_contract": metadata_contract,
-        "metadata_contract_id": "confidence_rrpv" if mode == "joint" else None,
+        "metadata_contract_id": "confidence_rrpv",
         "parent_ipc": ipc,
         "parent_l2c_mpki": l2c_mpki,
         "insights_excerpt": insights[:4000],
@@ -149,6 +154,7 @@ def format_directive(directive: dict[str, Any]) -> str:
     lines = [
         "=== Design directive ===",
         f"Mode: {directive['mode']}",
+        f"Focus component: {directive.get('focus_component', 'joint')}",
         directive["summary"],
         f"Prefetcher focus: {directive['prefetcher_focus']}",
         f"Replacement focus: {directive['replacement_focus']}",

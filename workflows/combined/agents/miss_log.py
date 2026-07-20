@@ -9,7 +9,7 @@ from typing import Iterable
 
 
 BLOCK_SIZE = 64
-L2_SETS = 1024  # matches workflows/combined/champsim_config.json
+L2_SETS = 2048  # matches workflows/combined/champsim_config.json (DPC4 1C.limitBW)
 
 
 @dataclass(frozen=True)

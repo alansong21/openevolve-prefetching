@@ -15,9 +15,9 @@ if str(_COMBINED_DIR) not in sys.path:
 
 from agents.critic import review_combined_source  # noqa: E402
 from agents.directive import format_directive, synthesize_directive  # noqa: E402
-from agents.engineer import run_engineer  # noqa: E402
+from agents.implementer import run_implementer  # noqa: E402
+from agents.storage import analyze_storage  # noqa: E402
 from insight_service import build_insight_bundle  # noqa: E402
-from merge import extract_layout, merge_sections  # noqa: E402
 from orchestrator import orchestrator_enabled, run_orchestrator_async  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -50,63 +50,44 @@ async def _run_phase2_mutation_async(
         parent_artifacts,
         token_budget=int(os.environ.get("OPENEVOLVE_INSIGHT_BUDGET", "8000")),
     )
+    insights += "\n\n=== Storage analysis (parent) ===\n" + analyze_storage(
+        parent_code
+    ).text()
     directive = synthesize_directive(insights, parent_metrics, iteration)
     directive_text = format_directive(directive)
 
-    layout = extract_layout(parent_code)
-    pf_section = layout.prefetcher_section
-    rp_section = layout.replacement_section
-
     responses: list[str] = []
     critic_feedback = ""
+    candidate_code = parent_code
 
     for attempt in range(MAX_CRITIC_RETRIES + 1):
-        if directive["edit_prefetcher"]:
-            pf_response = await run_engineer(
-                llm_ensemble,
-                role="prefetcher",
-                section_source=pf_section,
-                directive_text=directive_text,
-                insights=insights,
-                critic_feedback=critic_feedback,
-            )
-            responses.append(f"[Prefetcher engineer attempt {attempt + 1}]\n{pf_response}")
-            pf_section = _apply_section_diff(pf_section, pf_response, diff_pattern)
-        else:
-            responses.append(f"[Prefetcher engineer] skipped ({directive['mode']})")
-
-        if directive["edit_replacement"]:
-            rp_response = await run_engineer(
-                llm_ensemble,
-                role="replacement",
-                section_source=rp_section,
-                directive_text=directive_text,
-                insights=insights,
-                critic_feedback=critic_feedback,
-            )
-            responses.append(f"[Replacement engineer attempt {attempt + 1}]\n{rp_response}")
-            rp_section = _apply_section_diff(rp_section, rp_response, diff_pattern)
-        else:
-            responses.append(f"[Replacement engineer] skipped ({directive['mode']})")
-
-        child_code = merge_sections(layout, pf_section, rp_section)
+        response = await run_implementer(
+            llm_ensemble,
+            combined_source=candidate_code,
+            directive_text=directive_text,
+            insights=insights,
+            critic_feedback=critic_feedback,
+        )
+        responses.append(f"[Unified implementer attempt {attempt + 1}]\n{response}")
+        child_code = _apply_section_diff(candidate_code, response, diff_pattern)
         contract_id = directive.get("metadata_contract_id")
         report = review_combined_source(
             child_code,
             metadata_contract_id=contract_id,
-            joint_edit=directive.get("edit_prefetcher", False) and directive.get("edit_replacement", False),
+            joint_edit=True,
         )
-        if report.approved:
+        storage_report = analyze_storage(child_code)
+        if report.approved and storage_report.approved:
             summary = (
-                f"Agentic mutation ({directive['mode']}, attempt {attempt + 1}): "
-                f"PF={'yes' if directive['edit_prefetcher'] else 'skip'}, "
-                f"RP={'yes' if directive['edit_replacement'] else 'skip'}"
+                f"Unified agentic mutation ({directive['mode']}, "
+                f"attempt {attempt + 1}, four policy sections)"
             )
             llm_response = "\n\n".join(responses)
             logger.info("Agentic mutation approved on attempt %d", attempt + 1)
             return child_code, llm_response, summary
 
-        critic_feedback = report.text()
+        critic_feedback = report.text() + "\n\n" + storage_report.text()
+        candidate_code = child_code
         logger.warning("Critic rejected attempt %d: %s", attempt + 1, critic_feedback)
 
     logger.error("Agentic mutation failed critic after %d attempts", MAX_CRITIC_RETRIES + 1)

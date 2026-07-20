@@ -10,7 +10,8 @@ modules, rebuilds, and reports IPC.
 ```
 workflows/combined/
   initial_program.cc      # Combined seed (PF + RP), split-marker delimited
-  champsim_config.json    # ChampSim config that wires both modules at L2C
+  champsim_config.json    # DPC4 1C.limitBW machine; OpenEvolve PF+RP at L2C
+  baseline_champsim_config.json  # Same machine; L2C no+lru for miss-log baseline
   config.yaml             # OpenEvolve config + dual-API system message
   evaluator.py            # Splits the candidate, reuses base evaluator pipeline
   README.md
@@ -96,11 +97,13 @@ Each OpenEvolve evaluation run writes under
 | Artifact | Path pattern | Contents |
 |----------|--------------|----------|
 | Simulator stdout | `.../champsim/<run_id>/<trace>.log` | Full ChampSim output |
-| Miss log | `.../champsim/<run_id>/<trace_stem>.misses.txt` | Demand misses per `(cpu, pc, address)` |
+| Miss log | `.../champsim/<run_id>/<trace_stem>.misses.txt` | L2C demand misses per `(cpu, pc, address)` |
 | Parsed stats | `metrics` + `artifacts.trace_results.trace_N_stats` | IPC, L2C/LLC MPKI, prefetch usefulness, miss latency |
 
 Miss logging is enabled by default (`CHAMPSIM_MISS_LOG=true`). Disable with
-`CHAMPSIM_MISS_LOG=false`.
+`CHAMPSIM_MISS_LOG=false`. The log records **L2C demand misses only**
+(simulation ROI; prefetch misses excluded). Rebuild ChampSim after changing
+the miss-log instrumentation.
 
 Metrics added to each evaluation include aggregate and per-trace:
 
@@ -163,16 +166,15 @@ Miss-log hypotheses populate after the first evaluated candidate produces
 ## Phase 2 agentic mutation (Mode B)
 
 When `OPENEVOLVE_WORKFLOW=combined` and `OPENEVOLVE_AGENTIC_MUTATION=true`
-(default for the combined launcher), OpenEvolve uses specialist engineers
-instead of a single undifferentiated mutation LLM:
+(default for the combined launcher), OpenEvolve uses one implementation agent
+that owns PF+RP behavior in both simulators:
 
 | Step | Agent | Action |
 |------|-------|--------|
-| 1 | Directive | Picks `joint`, `prefetcher_only`, or `replacement_only` from metrics + insights |
-| 2 | PF engineer | SEARCH/REPLACE edits scoped to the prefetcher half |
-| 3 | RP engineer | SEARCH/REPLACE edits scoped to the replacement half |
-| 4 | Critic | Static checks (markers, APIs, no cross-includes, split round-trip) |
-| 5 | Merge | Reassembles a valid combined file via `workflows/combined/merge.py` |
+| 1 | Directive | Selects a joint design play and optional PF/RP focus text |
+| 2 | Unified implementer | One SEARCH/REPLACE response across all four policy sections |
+| 3 | Critic | Static checks (markers, APIs, no cross-includes, split round-trip) |
+| 4 | Evaluator | Builds ChampSim modules and the combined drcachesim plugin |
 
 Implementation: `workflows/combined/agentic_mutation.py`, wired through
 `openevolve/openevolve/mutation_agent.py` into `iteration.py` and
@@ -182,8 +184,30 @@ mutation fails.
 Environment knobs:
 
 - `OPENEVOLVE_AGENTIC_MUTATION=false` — disable, use single LLM mutation
-- `OPENEVOLVE_MUTATION_MODE=joint|prefetcher_only|replacement_only` — force edit scope
+- `OPENEVOLVE_MUTATION_MODE=joint|prefetcher|replacement` — force focus text;
+  the unified implementer still owns all four sections
 - `OPENEVOLVE_CRITIC_RETRIES=2` — critic reject/revise attempts before fallback
+
+## Hierarchical evaluation and rigor
+
+- `OPENEVOLVE_HIERARCHICAL_EVAL=true` — use drcachesim before periodic
+  ChampSim; set false for the no-stage-1 ablation.
+- `HIER_STAGE2_EVERY_N=10` — authoritative ChampSim cadence.
+- `DRCACHESIM_TRACE_ROOT` — converted L2 access-trace root containing both
+  `.trace.gz` payloads and adjacent `.counts.json` files.
+- `DRCACHESIM_CHAMPSIM_CONFIG` — ChampSim JSON whose `L2C`/`LLC` geometry
+  sizes the L2C→LLC drcachesim hierarchy (default:
+  `workflows/combined/champsim_config.json`, DPC4 **1C.limitBW**:
+  L2C 2 MiB, LLC 3 MiB, DRAM 800 MT/s).
+  Stock drcachesim does not model ChampSim DRAM timing; stage-1 records
+  ChampSim `physical_memory` / hit latencies as metadata only.
+- `STORAGE_BUDGET_BYTES=262144` — hard PF+RP state budget (DPC4-sized L2C).
+- `CHAMPSIM_HELDOUT_PATTERNS=token1,token2` — trace-name tokens reserved for
+  held-out regression checks.
+- `HIER_CALIBRATION_PATH` — persisted proxy-to-IPC ridge model.
+
+Use `scripts/run_combined_ablation.py` to record and run full,
+native-mutator, no-stage-1, and native/no-stage-1 variants.
 
 ## Phase 3 orchestrator (Mode C)
 
