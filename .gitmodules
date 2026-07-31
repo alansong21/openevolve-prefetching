@@ -10,3 +10,6 @@
 [submodule "cbp-ng"]
 	path = cbp-ng
 	url = https://github.com/AmpereComputing/cbp-ng.git
+[submodule "DynamoRIO"]
+	url = https://github.com/varungohil/dynamorio.git
+	branch = openevolve-prefetcher-plugin
