@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "key": "l2c=2048x16x64|llc=4096x12|/users/varuncg/openevolve-prefetching/l2_drcachesim_out/602.gcc_s-1850B/drmemtrace.champsim_l2.1.trace.gz:16302012:10009536",
+  "stats": {
+    "name": "aggregate",
+    "hits": 191,
+    "misses": 332797,
+    "compulsory_misses": 2702384,
+    "prefetch_hits": 227,
+    "prefetch_misses": 2373478,
+    "child_hits": 1606945,
+    "miss_rate": 0.9994264057563635,
+    "total_miss_rate": 0.0
+  }
+}

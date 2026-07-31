@@ -1,0 +1,47 @@
+{
+  "metric_name": "ipc",
+  "metric_goal": "MAXIMIZE",
+  "algorithm": "DEFAULT",
+  "knobs": [
+    {
+      "name": "kNumIpTableEntries",
+      "type": "discrete",
+      "values": [256, 512, 1024, 2048, 4096],
+      "description": "IPCP IP-table capacity (power of two)"
+    },
+    {
+      "name": "kNumGhbEntries",
+      "type": "int",
+      "min": 8,
+      "max": 64,
+      "description": "Global history buffer depth"
+    },
+    {
+      "name": "kNumIpTagBits",
+      "type": "int",
+      "min": 4,
+      "max": 12,
+      "description": "IP tag width for tracker matching"
+    },
+    {
+      "name": "kSignatureBits",
+      "type": "int",
+      "min": 8,
+      "max": 14,
+      "description": "Delta-prediction signature width (drives DPT size)"
+    },
+    {
+      "name": "kDrStrideEntries",
+      "type": "discrete",
+      "values": [64, 128, 256, 512],
+      "description": "drcachesim stride table entries"
+    }
+  ],
+  "derived": [
+    {
+      "name": "kNumIpIndexBits",
+      "from": "kNumIpTableEntries",
+      "op": "log2"
+    }
+  ]
+}
