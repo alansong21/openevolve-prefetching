@@ -27,16 +27,17 @@ import sys
 from pathlib import Path
 from typing import Tuple
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+COMP_DIR = REPO_ROOT / "openevolve-components"
+WORKFLOW_DIR = Path(__file__).resolve().parent
+if str(WORKFLOW_DIR) not in sys.path:
+    sys.path.insert(0, str(WORKFLOW_DIR))
+
 from drcachesim_runner import build_candidate_plugin, evaluate_stage1_policy
 from hierarchical_state import next_evaluation, stage1_gate_metrics
 from agents.storage import analyze_storage
 from agents.drcachesim_analysis import analyze_drcachesim
 from calibration import ProxyCalibration
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-COMP_DIR = REPO_ROOT / "openevolve-components"
-WORKFLOW_DIR = Path(__file__).resolve().parent
-
 from split_source import (
     PREFETCHER_BEGIN,
     PREFETCHER_END,

@@ -203,6 +203,18 @@ def analyze_storage(
     budget_bytes: int | None = None,
     config_path: Path = DEFAULT_CONFIG,
 ) -> StorageReport:
+    """Estimate PF+RP state and optionally hard-gate candidates.
+
+    ``STORAGE_GATE_MODE`` controls rejection (metrics/report always emitted):
+
+    - ``strict`` (default): reject on budget overrun, unbounded containers,
+      unsized arrays/vectors, or drcachesim state > 1.25× ChampSim.
+    - ``budget_only``: reject only when ChampSim PF+RP exceeds the byte budget.
+      Use this for DPC4-style seeds that use ``std::vector`` / maps the
+      estimator cannot size, and for fixed baseline DR blocks that look large
+      relative to an under-counted ChampSim half.
+    - ``off`` / ``false`` / ``0``: never reject; stage-1 proceeds anyway.
+    """
     config = json.loads(config_path.read_text(encoding="utf-8"))
     l2 = config.get("L2C", {})
     cache_lines = int(l2.get("sets", 2048)) * int(l2.get("ways", 16))
@@ -210,6 +222,7 @@ def analyze_storage(
     budget = budget_bytes or int(
         os.environ.get("STORAGE_BUDGET_BYTES", str(DEFAULT_BUDGET_BYTES))
     )
+    gate_mode = os.environ.get("STORAGE_GATE_MODE", "strict").strip().lower()
 
     cs_pf, cs_rp, dr_pf, dr_rp = split_dual_backend_source(combined_source)
     estimates: dict[str, int] = {}
@@ -231,7 +244,25 @@ def analyze_storage(
         reasons.append(f"primary policy state exceeds budget by {primary - budget} bytes")
     if primary and dr_bytes > primary * 1.25:
         reasons.append("drcachesim mirror uses over 25% more state than ChampSim")
-    approved = not reasons
+
+    if gate_mode in {"off", "false", "0", "no"}:
+        approved = True
+        if reasons:
+            reasons = [f"(gate off; would have rejected) {r}" for r in reasons]
+    elif gate_mode in {"budget_only", "budget"}:
+        over_budget = [r for r in reasons if r.startswith("primary policy state exceeds")]
+        approved = not over_budget
+        if reasons and approved:
+            reasons = [f"(budget_only; advisory) {r}" for r in reasons]
+        elif over_budget:
+            reasons = over_budget + [
+                f"(budget_only; ignored) {r}"
+                for r in reasons
+                if not r.startswith("primary policy state exceeds")
+            ]
+    else:
+        approved = not reasons
+
     return StorageReport(
         primary_bytes=primary,
         drcachesim_bytes=dr_bytes,

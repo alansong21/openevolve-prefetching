@@ -202,6 +202,10 @@ Environment knobs:
   Stock drcachesim does not model ChampSim DRAM timing; stage-1 records
   ChampSim `physical_memory` / hit latencies as metadata only.
 - `STORAGE_BUDGET_BYTES=262144` — hard PF+RP state budget (DPC4-sized L2C).
+- `STORAGE_GATE_MODE=strict|budget_only|off` — storage hard-gate policy.
+  DPC4 seeds often use unsized `std::vector` / maps; use `budget_only` (or
+  `off`) so stage-1 is not blocked by those heuristics / the 1.25× DR mirror
+  check. Default remains `strict`.
 - `CHAMPSIM_HELDOUT_PATTERNS=token1,token2` — trace-name tokens reserved for
   held-out regression checks.
 - `HIER_CALIBRATION_PATH` — persisted proxy-to-IPC ridge model.

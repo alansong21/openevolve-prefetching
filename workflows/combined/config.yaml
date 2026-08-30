@@ -12,15 +12,12 @@ evaluator:
   # drcachesim proxy passes its quality gate. Proxy-only candidates remain
   # negative but are still archived for search.
   cascade_thresholds: [0.5, 0.5]
-  use_llm_feedback: true
+  use_llm_feedback: false
 
 llm:
   api_base: "https://api.openai.com/v1"
   models:
-    - name: "gpt-4o"
-      weight: 1.0
-  evaluator_models:
-    - name: "gpt-4o-mini"
+    - name: "gpt-5.6-luna"
       weight: 1.0
   retries: 5
   retry_delay: 5
@@ -80,6 +77,18 @@ prompt:
         simulator's available callbacks and metadata.
       • Both sections are wrapped in OpenEvolve `// EVOLVE-BLOCK-START` /
         `// EVOLVE-BLOCK-END` markers; mutate code inside those blocks only.
+
+    =====================
+    EVOLUTION GOAL
+    =====================
+      • Propose substantive algorithmic ideas (new prediction tables, training
+        rules, victim/insertion policies, throttling logic, cross-PF/RP
+        metadata protocols). Do NOT treat this as parameter tuning: avoid
+        diffs that only nudge constants, thresholds, table sizes, or
+        confidence counters without changing the control flow or mechanism.
+      • Prefer inventing or recombining mechanisms over local hyperparameter
+        search. Small numeric tweaks are allowed only when they enable a
+        clear algorithmic change.
 
     =====================
     EVALUATION CRITERIA
@@ -203,11 +212,11 @@ prompt:
   include_artifacts: true
   max_artifact_bytes: 40960
 
-database[q]:
-  population_size: 12
-  archive_size: 6
-  num_islands: 1
-  exploration_ratio: 0.4
-  exploitation_ratio: 0.6
+database:
+  population_size: 20
+  archive_size: 10
+  num_islands: 3
+  exploration_ratio: 0.6
+  exploitation_ratio: 0.4
   elite_selection_ratio: 0.1
   log_prompts: true
